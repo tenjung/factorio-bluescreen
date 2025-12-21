@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>팩토리오 청사진 뷰어 v1.0</title>
+    <!-- 외부 라이브러리 로드 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes belt-forward { from { background-position: 0 0; } to { background-position: 32px 0; } }
+        @keyframes belt-reverse { from { background-position: 0 0; } to { background-position: -32px 0; } }
+        @keyframes item-flow { 0% { left: -32px; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+        @keyframes pulse-slow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.1); } }
+        @keyframes flow-line { 0% { stroke-dashoffset: 40; } 100% { stroke-dashoffset: 0; } }
+        .animate-belt-forward { animation: belt-forward 1s linear infinite; }
+        .animate-belt-reverse { animation: belt-reverse 1s linear infinite; }
+        .animate-item-flow { animation: item-flow linear infinite; }
+        .animate-pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }
+        .animate-flow-line { stroke-dasharray: 8; animation: flow-line 1.5s linear infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-[#080808]">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // 팩토리오 위키 아이콘 자산
+        const ASSETS = {
+            copper_plate: "https://wiki.factorio.com/images/Copper_plate.png",
+            iron_plate: "https://wiki.factorio.com/images/Iron_plate.png",
+            copper_cable: "https://wiki.factorio.com/images/Copper_cable.png",
+            electronic_circuit: "https://wiki.factorio.com/images/Electronic_circuit.png",
+            assembler_2: "https://wiki.factorio.com/images/Assembling_machine_2.png",
+            inserter: "https://wiki.factorio.com/images/Inserter.png",
+            long_handed_inserter: "https://wiki.factorio.com/images/Long-handed_inserter.png",
+            fast_inserter: "https://wiki.factorio.com/images/Fast_inserter.png",
+            belt: "https://wiki.factorio.com/images/Transport_belt.png"
+        };
+
+        const ItemImage = ({ type, size = 18, className = "" }) => (
+            <img src={ASSETS[type]} alt={type} className={`object-contain inline-block ${className}`} style={{ width: size, height: size }} />
+        );
+
+        // 투입기(집게) 컴포넌트
+        const Inserter = ({ type = "inserter", isPlaying = true, className = "" }) => (
+            <div className={`relative flex flex-col items-center ${className}`}>
+                <img src={ASSETS[type]} className="w-5 h-5 sm:w-6 sm:h-6 z-10" alt={type} />
+                <div className={`absolute -bottom-2 transition-opacity ${isPlaying ? 'opacity-100' : 'opacity-40'}`}>
+                    <div className={`text-yellow-400 font-bold text-[12px] ${isPlaying ? 'animate-bounce' : ''}`}>▼</div>
+                </div>
+            </div>
+        );
+
+        // 벨트 컴포넌트
+        const RealBelt = ({ label, items = [], speed = "2s", reverse = false, lane = "top" }) => (
+            <div className="relative w-full h-8 bg-[#222] border-y border-black/50 overflow-hidden flex items-center shadow-lg">
+                <div className={`absolute inset-0 opacity-40 ${reverse ? 'animate-belt-reverse' : 'animate-belt-forward'}`}
+                     style={{ backgroundImage: `url(${ASSETS.belt})`, backgroundSize: '32px 32px', backgroundRepeat: 'repeat-x' }} />
+                <div className="relative w-full h-full z-10">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="absolute flex items-center justify-center animate-item-flow" 
+                             style={{ animationDuration: speed, animationDelay: `${(i * 1.5)}s`, top: lane === 'top' ? '2px' : '14px', left: '-32px' }}>
+                            <ItemImage type={items[0]} size={16} />
+                        </div>
+                    ))}
+                </div>
+                <span className="absolute left-2 bottom-0 text-[6px] font-black text-white/40 uppercase tracking-widest z-20">{label}</span>
+            </div>
+        );
+
+        // 조립 기계 컴포넌트
+        const Machine = ({ type, title, recipe, logicVal, color }) => {
+            const isWire = type === 'wire';
+            const productType = isWire ? 'copper_cable' : 'electronic_circuit';
+            return (
+                <div className={`relative flex flex-col items-center p-2 rounded-xl border-2 bg-[#1a1a1a] shadow-xl ${color} w-24 sm:w-28`}>
+                    <div className={`absolute -top-3 -right-1 px-1.5 py-0.5 rounded text-[8px] font-black shadow-lg border z-20 ${isWire ? 'bg-orange-600 border-orange-400 text-white' : 'bg-green-600 border-green-400 text-white'}`}>
+                        {logicVal}
+                    </div>
+                    <div className="absolute -top-2.5 left-1 px-1.5 py-0.5 rounded-full bg-black/80 border border-white/10 text-[7px] font-bold text-white/90 z-20">{recipe}</div>
+                    <div className="relative flex items-center justify-center">
+                        <img src={ASSETS.assembler_2} alt="assembler" className="w-10 h-10 sm:w-14 sm:h-14 animate-pulse-slow" />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="bg-black/40 p-1 rounded-md border border-white/20 shadow-md">
+                                <ItemImage type={productType} size={18} className="sm:w-6 sm:h-6" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-1 text-center">
+                        <p className="text-[8px] sm:text-[10px] font-black text-white leading-tight uppercase tracking-tighter">
+                            {isWire ? "구리 전선" : "전자 회로"}
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [copied, setCopied] = useState(false);
+            const [isPlaying, setIsPlaying] = useState(true);
+
+            const handleCopy = () => {
+                const textArea = document.createElement("textarea");
+                textArea.value = "0eNcl0O0KwjAMBeB3ud8OunVzXkUko0vWwDallmFEpHe3On99HByHk9xBm5P2GIsD6ID6gBNoD7A+R9Cee+vYvI6xP9GChqU7MKBj6o+NoX6tq1V9L/3pP1i+U6YFrX7uA7pT/iC79v1iL2G93Oa9X5M8U6IFrWreA7pV/pRdunG4m5uT50m0pAnO6wHtqHicXd0p78e2N99W6y9Xq49fS/MvV20f86A63OaX3vI77x20v7pX8G10/3C35NvoyyA1S38D3pQ9K00Vq0t3F7A65Ym0Y+oA3Sj/STvO20eD8h/9F9C+0p61p6v1vP4A4Tf47A==";
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <div className="h-screen bg-[#080808] text-gray-300 font-sans p-2 sm:p-4 flex flex-col overflow-hidden">
+                    <div className="flex justify-between items-center bg-[#111] px-4 py-2 rounded-xl border border-white/5 mb-2">
+                        <div className="flex items-center gap-3">
+                            <img src={ASSETS.electronic_circuit} className="w-5 h-5 sm:w-6 sm:h-6" alt="circuit" />
+                            <h1 className="text-xs sm:text-lg font-black text-white tracking-tight uppercase underline decoration-orange-500">배포 1 버전</h1>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsPlaying(!isPlaying)} className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[8px] font-black border border-white/10 uppercase">{isPlaying ? 'PAUSE' : 'RESUME'}</button>
+                            <button onClick={handleCopy} className={`px-3 py-1 rounded-lg text-[8px] font-black transition-all shadow-lg ${copied ? 'bg-green-600' : 'bg-orange-600'}`}>{copied ? 'COPIED' : 'COPY'}</button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col gap-2 overflow-hidden">
+                        <div className="flex-[1.2] bg-[#0c0c0c] rounded-2xl border border-white/5 relative flex flex-col items-center justify-center gap-2 overflow-hidden p-2">
+                            <div className="w-full max-w-xs z-20"><RealBelt label="구리 판 공급 (입력)" items={['copper_plate']} speed="2.5s" /></div>
+                            
+                            <div className="flex gap-4 sm:gap-6 items-end z-20 scale-90 sm:scale-100">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="flex flex-col items-center">
+                                        <Inserter isPlaying={isPlaying} className="mb-1" />
+                                        <Machine type="wire" title={`전선 공장 ${i}`} recipe="1 → 2" logicVal={i === 2 ? "0.5+0.5" : "1.0"} color={i === 2 ? "border-orange-500/60" : "border-orange-500/20"} />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-16 sm:gap-24 items-center z-20 scale-90 sm:scale-100">
+                                <div className="flex flex-col items-center">
+                                    <div className="flex gap-6 mb-1"><Inserter isPlaying={isPlaying} /><Inserter type="long_handed_inserter" isPlaying={isPlaying} /></div>
+                                    <Machine type="circuit" title="회로 공장 A" recipe="3+1 → 1" logicVal="1.5" color="border-green-500/30" />
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <div className="flex gap-6 mb-1"><Inserter type="long_handed_inserter" isPlaying={isPlaying} /><Inserter isPlaying={isPlaying} /></div>
+                                    <Machine type="circuit" title="회로 공장 B" recipe="3+1 → 1" logicVal="1.5" color="border-green-500/30" />
+                                </div>
+                            </div>
+
+                            <div className="w-full max-w-sm z-20 mt-1 scale-90 sm:scale-100">
+                                <RealBelt label="전자 회로 출력" items={['electronic_circuit']} speed="3.5s" lane="top" />
+                                <RealBelt label="철 판 공급" items={['iron_plate']} speed="4s" reverse={true} lane="bottom" colorClass="bg-slate-900/30" />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 bg-[#111] rounded-2xl border border-white/5 p-3 overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] text-gray-400 text-left">
+                                <div><h3 className="font-black text-orange-500 uppercase mb-1 tracking-wider">황금 비율 3:2</h3>회로 공장 1개당 전선 공장 1.5개가 필요합니다. 전선 3개와 회로 2개는 밸런스가 완벽합니다.</div>
+                                <div><h3 className="font-black text-blue-400 uppercase mb-1 tracking-wider">직접 투입 (DI)</h3>벨트 대신 집게로 자원을 바로 전달해 병목 현상을 방지하는 것이 핵심입니다.</div>
+                                <div><h3 className="font-black text-red-500 uppercase mb-1 tracking-wider">긴 팔 투입기</h3>중앙 전선 공장 자원을 배분할 때는 반드시 <strong>빨간색 긴 팔 투입기</strong>를 사용하세요.</div>
+                                <div><h3 className="font-black text-green-500 uppercase mb-1 tracking-wider">반줄 설계</h3>하단 벨트는 한쪽 면은 철판 공급, 다른 면은 결과물 출력용으로 나누어 사용합니다.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
