@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEffect, useState } from "react";
 
 type Status = {
+  playerCount?: number | null;
   running: boolean;
   uptime: string | null;
   cpu: number | null;
@@ -34,10 +35,12 @@ const formatTime = (value: string) =>
   new Date(value).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" });
 
 export function LiveStatus({
+  publicView = false,
   page,
   refreshKey,
   navigate,
 }: {
+  publicView?: boolean;
   page: string;
   refreshKey: number;
   navigate: (page: string) => void;
@@ -115,7 +118,7 @@ export function LiveStatus({
     {
       icon: Users,
       label: "접속 플레이어",
-      value: status?.players?.length,
+      value: status?.playerCount ?? status?.players?.length,
       suffix: "명",
       detail: "현재 접속 인원",
     },
@@ -318,9 +321,11 @@ export function LiveStatus({
                 </p>
               </div>
             </div>
-            <Button variant="outline" onClick={() => navigate("settings")}>
-              서버 설정
-            </Button>
+            {!publicView && (
+              <Button variant="outline" onClick={() => navigate("settings")}>
+                서버 설정
+              </Button>
+            )}
           </section>
           <div className="stats-grid">
             {metrics.map(({ icon: Icon, label, value, suffix, detail }) => (
@@ -339,7 +344,7 @@ export function LiveStatus({
               </Card>
             ))}
           </div>
-          <div className="middle-grid">
+          <div className={publicView ? "mb-5" : "middle-grid"}>
             <Card className="performance-card">
               <CardHeader>
                 <div>
@@ -442,12 +447,14 @@ export function LiveStatus({
                 </div>
               </CardContent>
             </Card>
-            {playersCard}
+            {!publicView && playersCard}
           </div>
-          <div className="bottom-grid">
-            {logsCard}
-            {savesCard}
-          </div>
+          {!publicView && (
+            <div className="bottom-grid">
+              {logsCard}
+              {savesCard}
+            </div>
+          )}
         </>
       )}
     </>

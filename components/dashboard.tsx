@@ -209,7 +209,13 @@ function PerformanceChart({ metric }: { metric: string }) {
   );
 }
 
-export function Dashboard({ live = false }: { live?: boolean }) {
+export function Dashboard({
+  live = false,
+  publicView = false,
+}: {
+  live?: boolean;
+  publicView?: boolean;
+}) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [page, setPage] = useState("overview");
   const [mobileNav, setMobileNav] = useState(false);
@@ -291,7 +297,9 @@ export function Dashboard({ live = false }: { live?: boolean }) {
         <div className="nav-label">워크스페이스</div>
         <nav aria-label="주 메뉴">
           {navigation
-            .filter((item) => live || item.id !== "chat")
+            .filter((item) =>
+              publicView ? item.id === "overview" : live || item.id !== "chat",
+            )
             .map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -423,6 +431,7 @@ export function Dashboard({ live = false }: { live?: boolean }) {
           </div>
           {live ? (
             <LiveStatus
+              publicView={publicView}
               page={page}
               refreshKey={refreshKey}
               navigate={navigate}

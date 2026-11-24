@@ -18,6 +18,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  if (process.env.VERCEL_ENV === "production")
+    return new Response(null, { status: 405 });
   const bridge =
     process.env.VERCEL_ENV !== "preview" && process.env.FACTORIO_BRIDGE_SECRET;
   if (!bridge) {
@@ -71,6 +73,8 @@ async function handle(
     | "addresses",
 ) {
   const settings = view !== "status";
+  const publicView = process.env.VERCEL_ENV === "production";
+  if (publicView && settings) return new Response(null, { status: 404 });
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
   if (settings && view !== "chat") {
@@ -91,7 +95,7 @@ async function handle(
     }
   }
   if (
-    process.env.VERCEL_ENV === "preview" &&
+    (process.env.VERCEL_ENV === "preview" || publicView) &&
     secret &&
     process.env.FACTORIO_BRIDGE_URL
   ) {
@@ -122,7 +126,23 @@ async function handle(
         ),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
-      return Response.json(await upstream.json(), { headers });
+      const status = await upstream.json();
+      if (publicView) {
+        return Response.json(
+          {
+            running: status.running,
+            uptime: status.uptime,
+            cpu: status.cpu,
+            memoryMiB: status.memoryMiB,
+            checkedAt: status.checkedAt,
+            playerCount: Array.isArray(status.players)
+              ? status.players.length
+              : null,
+          },
+          { headers },
+        );
+      }
+      return Response.json(status, { headers });
     } catch {
       return Response.json({ error: "unavailable" }, { status: 503, headers });
     }
