@@ -297,9 +297,7 @@ export function Dashboard({
         <div className="nav-label">워크스페이스</div>
         <nav aria-label="주 메뉴">
           {navigation
-            .filter((item) =>
-              publicView ? item.id === "overview" : live || item.id !== "chat",
-            )
+            .filter((item) => live || item.id !== "chat")
             .map(({ id, label, icon: Icon }) => (
               <button
                 key={id}

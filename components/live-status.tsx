@@ -292,10 +292,29 @@ export function LiveStatus({
       {page === "players" && playersCard}
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
-      {page === "chat" && <ServerChat running={status?.running} />}
-      {page === "settings" && (
-        <ServerSettings refreshKey={refreshKey} running={status?.running} />
+      {page === "chat" && (
+        <ServerChat running={status?.running} readOnly={publicView} />
       )}
+      {page === "settings" &&
+        (publicView ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>서버 설정</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-sm text-muted-foreground">
+                서버 설정과 제어는 관리자 페이지에서 이용할 수 있습니다.
+              </p>
+              <Button asChild variant="outline">
+                <a href="https://factorio-bluescreen-git-feat-control-d-ced340-tenjungs-projects.vercel.app/">
+                  관리자 페이지 열기
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <ServerSettings refreshKey={refreshKey} running={status?.running} />
+        ))}
       {overview && (
         <>
           <section className="server-banner" aria-label="실제 서버 상태">
@@ -344,7 +363,7 @@ export function LiveStatus({
               </Card>
             ))}
           </div>
-          <div className={publicView ? "mb-5" : "middle-grid"}>
+          <div className="middle-grid">
             <Card className="performance-card">
               <CardHeader>
                 <div>
@@ -447,14 +466,12 @@ export function LiveStatus({
                 </div>
               </CardContent>
             </Card>
-            {!publicView && playersCard}
+            {playersCard}
           </div>
-          {!publicView && (
-            <div className="bottom-grid">
-              {logsCard}
-              {savesCard}
-            </div>
-          )}
+          <div className="bottom-grid">
+            {logsCard}
+            {savesCard}
+          </div>
         </>
       )}
     </>

@@ -74,7 +74,8 @@ async function handle(
 ) {
   const settings = view !== "status";
   const publicView = process.env.VERCEL_ENV === "production";
-  if (publicView && settings) return new Response(null, { status: 404 });
+  if (publicView && settings && view !== "chat")
+    return new Response(null, { status: 404 });
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
   if (settings && view !== "chat") {
@@ -107,7 +108,7 @@ async function handle(
         body: request.method === "POST" ? await request.text() : undefined,
         headers: {
           Authorization: `Bearer ${secret}`,
-          ...(settings
+          ...(settings && !publicView
             ? {
                 "x-settings-password":
                   request.headers.get("x-settings-password") ?? "",
@@ -127,7 +128,7 @@ async function handle(
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
       const status = await upstream.json();
-      if (publicView) {
+      if (publicView && view === "status") {
         return Response.json(
           {
             running: status.running,
@@ -135,8 +136,15 @@ async function handle(
             cpu: status.cpu,
             memoryMiB: status.memoryMiB,
             checkedAt: status.checkedAt,
-            playerCount: Array.isArray(status.players)
-              ? status.players.length
+            players: status.players,
+            saves: status.saves,
+            logs: Array.isArray(status.logs)
+              ? status.logs.map((line: string) =>
+                  line.replace(
+                    /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
+                    (path) => path.split("/").at(-1) ?? "",
+                  ),
+                )
               : null,
           },
           { headers },

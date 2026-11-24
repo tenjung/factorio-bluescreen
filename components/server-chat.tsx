@@ -7,7 +7,13 @@ import { Input } from "@/components/ui/input";
 
 const endpoint = "/api/server-status?view=chat";
 
-export function ServerChat({ running }: { running?: boolean }) {
+export function ServerChat({
+  running,
+  readOnly = false,
+}: {
+  running?: boolean;
+  readOnly?: boolean;
+}) {
   const [messages, setMessages] = useState<string[]>();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
@@ -110,39 +116,43 @@ export function ServerChat({ running }: { running?: boolean }) {
         {error && (
           <p className="section-caption">채팅을 갱신하지 못했습니다.</p>
         )}
-        <form
-          className="mt-4 flex flex-wrap gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          <Input
-            className="flex-1"
-            maxLength={200}
-            required
-            aria-label="게임 메시지"
-            placeholder="게임에 보낼 메시지"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            disabled={sending || running !== true || !messages}
-          />
-          <Button
-            type="submit"
-            disabled={
-              sending ||
-              running !== true ||
-              !messages ||
-              !draft.trim() ||
-              draft.trimStart().startsWith("/")
-            }
-          >
-            전송
-          </Button>
-        </form>
-        <p className="section-caption" role="status">
-          {feedback || "메시지는 [웹 관리자]로 표시됩니다."}
-        </p>
+        {!readOnly && (
+          <>
+            <form
+              className="mt-4 flex flex-wrap gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+            >
+              <Input
+                className="flex-1"
+                maxLength={200}
+                required
+                aria-label="게임 메시지"
+                placeholder="게임에 보낼 메시지"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                disabled={sending || running !== true || !messages}
+              />
+              <Button
+                type="submit"
+                disabled={
+                  sending ||
+                  running !== true ||
+                  !messages ||
+                  !draft.trim() ||
+                  draft.trimStart().startsWith("/")
+                }
+              >
+                전송
+              </Button>
+            </form>
+            <p className="section-caption" role="status">
+              {feedback || "메시지는 [웹 관리자]로 표시됩니다."}
+            </p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
