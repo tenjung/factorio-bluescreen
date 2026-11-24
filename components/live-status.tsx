@@ -1,5 +1,7 @@
 "use client";
 
+import { HistoryToggle } from "@/components/history-toggle";
+import { historyLimits, recentLimits } from "@/lib/factorio-list-limits";
 import { ServerChat } from "@/components/server-chat";
 import { ServerSettings } from "@/components/server-settings";
 
@@ -95,6 +97,80 @@ export function LiveStatus({
       stream?.close();
     };
   }, [refreshKey]);
+
+  const [older, setOlder] = useState<
+    Partial<Record<"logs" | "saves" | "playerEvents", Status>>
+  >({});
+  const [loadingOlder, setLoadingOlder] = useState<
+    "logs" | "saves" | "playerEvents" | null
+  >(null);
+  const [historyError, setHistoryError] = useState<
+    "logs" | "saves" | "playerEvents" | null
+  >(null);
+
+  async function toggleHistory(kind: "logs" | "saves" | "playerEvents") {
+    setHistoryError(null);
+    if (older[kind]) {
+      setOlder((current) => ({ ...current, [kind]: undefined }));
+      return;
+    }
+    setLoadingOlder(kind);
+    try {
+      const response = await fetch(`/api/server-status?history=${kind}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("History unavailable");
+      const full: Status = await response.json();
+      if (!Array.isArray(full[kind])) throw new Error("History unavailable");
+      setOlder((current) => ({ ...current, [kind]: full }));
+    } catch {
+      setHistoryError(kind);
+    } finally {
+      setLoadingOlder(null);
+    }
+  }
+
+  function historyButton(kind: "logs" | "saves" | "playerEvents") {
+    if (!older[kind] && (status?.[kind]?.length ?? 0) < recentLimits[kind])
+      return null;
+    return (
+      <HistoryToggle
+        expanded={Boolean(older[kind])}
+        pending={loadingOlder !== null}
+        error={historyError === kind}
+        onClick={() => void toggleHistory(kind)}
+      />
+    );
+  }
+
+  const logsToShow = older.logs
+    ? Array.from(
+        new Set([...(older.logs.logs ?? []), ...(status?.logs ?? [])]),
+      ).slice(-historyLimits.logs)
+    : status?.logs;
+  const savesToShow = older.saves
+    ? Array.from(
+        new Map(
+          [...(older.saves.saves ?? []), ...(status?.saves ?? [])].map(
+            (save) => [save.name, save],
+          ),
+        ).values(),
+      )
+        .sort((a, b) => b.modified.localeCompare(a.modified))
+        .slice(0, historyLimits.saves)
+    : status?.saves;
+  const eventsToShow = older.playerEvents
+    ? Array.from(
+        new Map(
+          [
+            ...(status?.playerEvents ?? []),
+            ...(older.playerEvents.playerEvents ?? []),
+          ].map((event) => [JSON.stringify(event), event]),
+        ).values(),
+      )
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, historyLimits.playerEvents)
+    : status?.playerEvents;
 
   const overview = page === "overview";
   const recentSave = status?.saves?.[0];
@@ -199,8 +275,8 @@ export function LiveStatus({
         )}
       </CardHeader>
       <CardContent>
-        <div className="terminal-lines">
-          {(overview ? status?.logs?.slice(-6) : status?.logs)?.map(
+        <div className="terminal-lines max-h-96 overflow-y-auto">
+          {(overview ? status?.logs?.slice(-6) : logsToShow)?.map(
             (line, index) => (
               <div
                 key={index}
@@ -216,6 +292,7 @@ export function LiveStatus({
             </p>
           )}
         </div>
+        {!overview && <div className="px-4 pb-3">{historyButton("logs")}</div>}
       </CardContent>
     </Card>
   );
@@ -228,32 +305,34 @@ export function LiveStatus({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {(overview
-          ? recentSave
-            ? [recentSave]
-            : []
-          : (status?.saves ?? [])
-        ).map((save) => (
-          <div className="save-list-row" key={save.name}>
-            <div className="file-icon">
-              <FileText size={22} />
+        <div className="max-h-96 overflow-y-auto">
+          {(overview
+            ? recentSave
+              ? [recentSave]
+              : []
+            : (savesToShow ?? [])
+          ).map((save) => (
+            <div className="save-list-row" key={save.name}>
+              <div className="file-icon">
+                <FileText size={22} />
+              </div>
+              <div className="save-list-info min-w-0 break-words">
+                <strong>{save.name}</strong>
+                <span>
+                  {new Date(save.modified).toLocaleString("ko-KR", {
+                    timeZone: "Asia/Seoul",
+                  })}{" "}
+                  · {(save.size / 1048576).toFixed(1)} MiB
+                </span>
+              </div>
             </div>
-            <div className="save-list-info min-w-0 break-words">
-              <strong>{save.name}</strong>
-              <span>
-                {new Date(save.modified).toLocaleString("ko-KR", {
-                  timeZone: "Asia/Seoul",
-                })}{" "}
-                · {(save.size / 1048576).toFixed(1)} MiB
-              </span>
-            </div>
-          </div>
-        ))}
-        {!status?.saves?.length && (
-          <p className="empty-state">
-            {status?.saves ? "저장 파일이 없습니다." : "세이브 확인 대기"}
-          </p>
-        )}
+          ))}
+          {!status?.saves?.length && (
+            <p className="empty-state">
+              {status?.saves ? "저장 파일이 없습니다." : "세이브 확인 대기"}
+            </p>
+          )}
+        </div>
         {overview && (
           <Button
             variant="outline"
@@ -263,6 +342,7 @@ export function LiveStatus({
             세이브 관리
           </Button>
         )}
+        {!overview && historyButton("saves")}
       </CardContent>
     </Card>
   );
@@ -297,9 +377,9 @@ export function LiveStatus({
             <CardTitle>접속·퇴장 기록</CardTitle>
           </CardHeader>
           <CardContent>
-            {status?.playerEvents?.length ? (
-              <ol className="divide-y divide-border">
-                {status.playerEvents.map(({ at, action, player }, index) => (
+            {eventsToShow?.length ? (
+              <ol className="max-h-96 divide-y divide-border overflow-y-auto">
+                {eventsToShow.map(({ at, action, player }, index) => (
                   <li
                     key={`${at}-${action}-${player}-${index}`}
                     className="flex flex-wrap items-center gap-3 py-3"
@@ -327,6 +407,7 @@ export function LiveStatus({
                   : "접속 기록을 확인하는 중입니다."}
               </p>
             )}
+            {historyButton("playerEvents")}
           </CardContent>
         </Card>
       )}

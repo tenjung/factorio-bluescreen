@@ -1,3 +1,4 @@
+import { historyLimits, recentLimits } from "@/lib/factorio-list-limits";
 import {
   chatStreamHeaders,
   createFactorioLogStream,
@@ -21,6 +22,19 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+function historyResponse(
+  request: Request,
+  snapshot: { logs?: unknown; saves?: unknown; playerEvents?: unknown },
+) {
+  const history = new URL(request.url).searchParams.get("history");
+  if (history !== "logs" && history !== "saves" && history !== "playerEvents")
+    return null;
+  return Response.json(
+    { [history]: snapshot[history] ?? null },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
 
 function statusResponse(request: Request, body: unknown, revision: unknown) {
   const tag = `"${createHash("sha256").update(JSON.stringify(revision)).digest("base64url")}"`;
@@ -178,18 +192,24 @@ async function handle(
               )
             : null,
         };
-        return statusResponse(request, snapshot, [
-          snapshot.running,
-          snapshot.players,
-          snapshot.logs,
-        ]);
+        return (
+          historyResponse(request, snapshot) ??
+          statusResponse(request, snapshot, [
+            snapshot.running,
+            snapshot.players,
+            snapshot.logs,
+          ])
+        );
       }
       if (view === "status")
-        return statusResponse(request, status, [
-          status.running,
-          status.players,
-          status.logs,
-        ]);
+        return (
+          historyResponse(request, status) ??
+          statusResponse(request, status, [
+            status.running,
+            status.players,
+            status.logs,
+          ])
+        );
       if (view === "chat" && request.method === "GET")
         return statusResponse(request, status, status);
       return Response.json(status, { headers });
@@ -233,7 +253,7 @@ async function handle(
               .filter((line) =>
                 /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[CHAT\] /.test(line),
               )
-              .slice(-50),
+              .slice(-historyLimits.chat),
             { headers },
           );
         }
@@ -290,11 +310,14 @@ async function handle(
     }
     if (stream) return factorioStatusStream(request);
     const snapshot = await readFactorioStatus();
-    return statusResponse(request, snapshot, [
-      snapshot.running,
-      snapshot.players,
-      snapshot.logs,
-    ]);
+    return (
+      historyResponse(request, snapshot) ??
+      statusResponse(request, snapshot, [
+        snapshot.running,
+        snapshot.players,
+        snapshot.logs,
+      ])
+    );
   } catch {
     return Response.json({ error: "unavailable" }, { status: 503, headers });
   }
@@ -374,7 +397,7 @@ async function readFactorioStatus() {
               ? [{ at: event[1], action: event[2], player: event[3] }]
               : [];
           })
-          .slice(-30)
+          .slice(-historyLimits.playerEvents)
           .reverse()
       : null;
   const logs =
@@ -390,7 +413,7 @@ async function readFactorioStatus() {
                 line,
               ),
           )
-          .slice(-50)
+          .slice(-historyLimits.logs)
       : null;
   const saves =
     entries.status === "fulfilled"
@@ -413,7 +436,7 @@ async function readFactorioStatus() {
     playerEvents,
     world: worldResult.status === "fulfilled" ? worldResult.value : null,
     logs,
-    saves,
+    saves: saves?.slice(0, historyLimits.saves) ?? null,
     running: Boolean(row),
     uptime: row?.[1] ?? null,
     cpu: row ? Number(row[2]) : null,
@@ -438,13 +461,18 @@ const factorioStatusStream = createFactorioLogStream(
     const snapshot = await readFactorioStatus();
     return {
       ...snapshot,
+      playerEvents:
+        snapshot.playerEvents?.slice(0, recentLimits.playerEvents) ?? null,
+      saves: snapshot.saves?.slice(0, recentLimits.saves) ?? null,
       logs:
-        snapshot.logs?.map((line) =>
-          line.replace(
-            /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
-            (path) => path.split("/").at(-1) ?? "",
-          ),
-        ) ?? null,
+        snapshot.logs
+          ?.slice(-recentLimits.logs)
+          .map((line) =>
+            line.replace(
+              /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
+              (path) => path.split("/").at(-1) ?? "",
+            ),
+          ) ?? null,
     };
   },
 );

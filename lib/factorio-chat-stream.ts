@@ -1,3 +1,4 @@
+import { recentLimits } from "./factorio-list-limits";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { watch, type FSWatcher } from "node:fs";
@@ -156,6 +157,6 @@ export const factorioChatStream = createFactorioLogStream(
       .filter((line) =>
         /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[CHAT\] /.test(line),
       )
-      .slice(-50),
+      .slice(-recentLimits.chat),
   (lines) => lines,
 );

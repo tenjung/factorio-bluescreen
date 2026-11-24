@@ -1,5 +1,7 @@
 "use client";
 
+import { HistoryToggle } from "@/components/history-toggle";
+import { historyLimits, recentLimits } from "@/lib/factorio-list-limits";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +19,9 @@ export function ServerChat({
   readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<string[]>();
+  const [older, setOlder] = useState<string[]>();
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const [unread, setUnread] = useState(0);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
@@ -27,10 +32,34 @@ export function ServerChat({
   const latest = useRef<string | undefined>(undefined);
   const previousMessages = useRef<string[]>([]);
 
+  const visibleMessages = older
+    ? Array.from(new Set([...older, ...(messages ?? [])])).slice(
+        -historyLimits.chat,
+      )
+    : messages;
+
+  async function toggleHistory() {
+    setHistoryError(false);
+    if (older) {
+      setOlder(undefined);
+      return;
+    }
+    setLoadingOlder(true);
+    try {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) throw new Error("Chat history unavailable");
+      setOlder(await response.json());
+    } catch {
+      setHistoryError(true);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
   useLayoutEffect(() => {
     const list = chatList.current;
     if (list && followLatest.current) list.scrollTop = list.scrollHeight;
-  }, [messages]);
+  }, [messages, older]);
 
   useEffect(() => {
     let stream: EventSource | undefined;
@@ -101,7 +130,8 @@ export function ServerChat({
         <div>
           <CardTitle>게임 채팅</CardTitle>
           <p className="section-caption">
-            최근 채팅 최대 50개 · 새 메시지가 있을 때 갱신
+            최근 채팅 최대 {older ? historyLimits.chat : recentLimits.chat}개 ·
+            새 메시지가 있을 때 갱신
           </p>
         </div>
       </CardHeader>
@@ -117,9 +147,9 @@ export function ServerChat({
             if (followLatest.current) setUnread(0);
           }}
         >
-          {messages?.length ? (
+          {visibleMessages?.length ? (
             <ul className="space-y-2">
-              {messages.map((line, index) => (
+              {visibleMessages.map((line, index) => (
                 <li className="break-words text-sm" key={index}>
                   <span className="mr-2 text-muted-foreground">
                     {line.slice(11, 19)}
@@ -134,6 +164,14 @@ export function ServerChat({
             </p>
           )}
         </div>
+        {(older || (messages?.length ?? 0) >= recentLimits.chat) && (
+          <HistoryToggle
+            expanded={Boolean(older)}
+            pending={loadingOlder}
+            error={historyError}
+            onClick={() => void toggleHistory()}
+          />
+        )}
         {unread > 0 && (
           <div className="mt-2 flex justify-end">
             <Button
