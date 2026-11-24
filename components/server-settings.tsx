@@ -1,6 +1,5 @@
 "use client";
 
-import { ServerChat } from "@/components/server-chat";
 import { NewWorld } from "@/components/new-world";
 
 import { useEffect, useState } from "react";
@@ -289,7 +288,6 @@ export function ServerSettings({
           </p>
         </CardContent>
       </Card>
-      <ServerChat password={password} running={running} />
       <Card>
         <CardHeader>
           <div>

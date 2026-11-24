@@ -3,23 +3,22 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 
 const endpoint = "/api/server-status?view=chat";
 
-export function ServerChat({
-  password,
-  running,
-}: {
-  password: string;
-  running?: boolean;
-}) {
+export function ServerChat({ running }: { running?: boolean }) {
+  const [password, setPassword] = useState("");
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [lockedMessage, setLockedMessage] = useState("");
   const [messages, setMessages] = useState<string[]>();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState("");
   useEffect(() => {
+    if (!password) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
@@ -32,6 +31,15 @@ export function ServerChat({
             AbortSignal.timeout(5000),
           ]),
         });
+        if (controller.signal.aborted) return;
+        if (response.status === 401) {
+          setMessages(undefined);
+          setDraft("");
+          setFeedback("");
+          setLockedMessage("비밀번호가 올바르지 않습니다.");
+          setPassword("");
+          return;
+        }
         if (!response.ok) throw new Error("Chat unavailable");
         setMessages(await response.json());
         setError(false);
@@ -69,6 +77,42 @@ export function ServerChat({
       setSending(false);
     }
   }
+
+  if (!password)
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>게임 채팅 잠금</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="settings-form max-w-sm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setLockedMessage("");
+              setError(false);
+              setPassword(passwordDraft);
+              setPasswordDraft("");
+            }}
+          >
+            <div>
+              <Label htmlFor="chat-password">설정 비밀번호</Label>
+              <Input
+                id="chat-password"
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                value={passwordDraft}
+                onChange={(event) => setPasswordDraft(event.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit">잠금 해제</Button>
+            {lockedMessage && <p role="alert">{lockedMessage}</p>}
+          </form>
+        </CardContent>
+      </Card>
+    );
 
   return (
     <Card className="mb-5">
@@ -118,13 +162,14 @@ export function ServerChat({
             placeholder="게임에 보낼 메시지"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            disabled={sending || running !== true}
+            disabled={sending || running !== true || !messages}
           />
           <Button
             type="submit"
             disabled={
               sending ||
               running !== true ||
+              !messages ||
               !draft.trim() ||
               draft.trimStart().startsWith("/")
             }

@@ -1,5 +1,6 @@
 "use client";
 
+import { ServerChat } from "@/components/server-chat";
 import { ServerSettings } from "@/components/server-settings";
 
 import {
@@ -288,6 +289,7 @@ export function LiveStatus({
       {page === "players" && playersCard}
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
+      {page === "chat" && <ServerChat running={status?.running} />}
       {page === "settings" && (
         <ServerSettings refreshKey={refreshKey} running={status?.running} />
       )}

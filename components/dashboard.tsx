@@ -20,6 +20,7 @@ import {
   HardDrive,
   LayoutDashboard,
   Menu,
+  MessageSquare,
   MoreHorizontal,
   Play,
   Power,
@@ -55,6 +56,7 @@ const navigation = [
   { id: "players", label: "플레이어", icon: Users },
   { id: "saves", label: "세이브 관리", icon: Database },
   { id: "logs", label: "서버 로그", icon: Terminal },
+  { id: "chat", label: "게임 채팅", icon: MessageSquare },
   { id: "settings", label: "서버 설정", icon: Settings2 },
 ];
 const players = [
@@ -288,20 +290,22 @@ export function Dashboard({ live = false }: { live?: boolean }) {
         </div>
         <div className="nav-label">워크스페이스</div>
         <nav aria-label="주 메뉴">
-          {navigation.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => navigate(id)}
-              className={cn("nav-item", page === id && "active")}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-              {id === "players" && !live ? (
-                <span className="nav-count">{running ? 3 : 0}</span>
-              ) : null}
-              {id === page ? <span className="active-line" /> : null}
-            </button>
-          ))}
+          {navigation
+            .filter((item) => live || item.id !== "chat")
+            .map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => navigate(id)}
+                className={cn("nav-item", page === id && "active")}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {id === "players" && !live ? (
+                  <span className="nav-count">{running ? 3 : 0}</span>
+                ) : null}
+                {id === page ? <span className="active-line" /> : null}
+              </button>
+            ))}
         </nav>
         <div className="sidebar-link">
           <div className="nav-label">도구</div>
@@ -398,7 +402,9 @@ export function Dashboard({ live = false }: { live?: boolean }) {
                       ? "소중한 공장의 진행 상황을 안전하게 관리하세요."
                       : page === "logs"
                         ? "서버에서 일어나는 모든 일을 확인하세요."
-                        : "나만의 공장에 맞게 서버 운영 환경을 설정하세요."}
+                        : page === "chat"
+                          ? "게임 채팅을 읽고 메시지를 보내세요."
+                          : "나만의 공장에 맞게 서버 운영 환경을 설정하세요."}
               </p>
             </div>
             <Button
