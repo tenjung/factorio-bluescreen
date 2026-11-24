@@ -105,13 +105,26 @@ function Setting({
 }
 
 export function ServerSettings({ refreshKey }: { refreshKey: number }) {
+  const [draftPassword, setDraftPassword] = useState("");
+  const [password, setPassword] = useState("");
   const [settings, setSettings] = useState<Settings>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (!password) return;
     const controller = new AbortController();
-    fetch(endpoint, { cache: "no-store", signal: controller.signal })
+    fetch(endpoint, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: { "x-settings-password": password },
+    })
       .then(async (response) => {
+        if (response.status === 401) {
+          setPassword("");
+          setSettings(undefined);
+          setMessage("비밀번호가 올바르지 않습니다.");
+          return;
+        }
         if (!response.ok) throw new Error("Settings unavailable");
         setSettings(await response.json());
         setMessage("");
@@ -121,7 +134,7 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
           setMessage("설정을 읽지 못했습니다. 새로고침으로 다시 시도하세요.");
       });
     return () => controller.abort();
-  }, [refreshKey]);
+  }, [refreshKey, password]);
 
   async function save(key: Field["key"], value: number | boolean) {
     setBusy(true);
@@ -129,7 +142,10 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-settings-password": password,
+        },
         body: JSON.stringify({ key, value }),
       });
       if (!response.ok) throw new Error("Save failed");
@@ -144,6 +160,41 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
       setBusy(false);
     }
   }
+
+  if (!password)
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>서버 설정 잠금</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="settings-form max-w-sm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setMessage("");
+              setPassword(draftPassword);
+              setDraftPassword("");
+            }}
+          >
+            <div>
+              <Label htmlFor="settings-password">설정 비밀번호</Label>
+              <Input
+                id="settings-password"
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                required
+                value={draftPassword}
+                onChange={(event) => setDraftPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit">잠금 해제</Button>
+            {message && <p role="alert">{message}</p>}
+          </form>
+        </CardContent>
+      </Card>
+    );
 
   return (
     <Card>

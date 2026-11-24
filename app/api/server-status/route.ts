@@ -35,6 +35,23 @@ export async function GET(request: Request) {
 async function handle(request: Request, settings: boolean) {
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
+  if (settings) {
+    const password = process.env.FACTORIO_SETTINGS_PASSWORD?.trim();
+    const supplied = Buffer.from(
+      request.headers.get("x-settings-password") ?? "",
+    );
+    const expected = Buffer.from(password ?? "");
+    if (
+      !password ||
+      supplied.length !== expected.length ||
+      !timingSafeEqual(supplied, expected)
+    ) {
+      return Response.json(
+        { error: "settings_locked" },
+        { status: 401, headers },
+      );
+    }
+  }
   if (
     process.env.VERCEL_ENV === "preview" &&
     secret &&
@@ -48,6 +65,12 @@ async function handle(request: Request, settings: boolean) {
         body: request.method === "POST" ? await request.text() : undefined,
         headers: {
           Authorization: `Bearer ${secret}`,
+          ...(settings
+            ? {
+                "x-settings-password":
+                  request.headers.get("x-settings-password") ?? "",
+              }
+            : {}),
           "Content-Type": "application/json",
         },
         cache: "no-store",
