@@ -34,3 +34,11 @@ Mac 관리 에이전트, 관리자 인증, 인증된 HTTPS 연결, 실제 상태
 ## Vercel
 
 Framework: Next.js. 기본 빌드 명령 `npm run build`를 사용합니다. 현재 미리보기 웹은 별도 환경변수 없이 배포할 수 있습니다.
+
+## Mac 운영용 API 에이전트
+
+`npm run build:agent`로 `.agent-build/server.mjs`를 만듭니다. 이 파일은 Node.js 22 이상에서 실행되며 런타임용 npm 패키지는 필요하지 않습니다. 개발용 Next.js 서버와 별도로, 서버 Mac의 루프백 주소 `127.0.0.1:3111`에서 기존 `/api/server-status` API를 제공합니다.
+
+Mac의 `com.factorio.bluescreen` LaunchAgent는 `~/Library/Application Support/FactorioBluescreen/`에 설치한 번들과 런처를 실행합니다. API나 Mac의 Factorio 제어 로직을 수정하면 번들을 다시 빌드하고 설치한 뒤 **이 LaunchAgent만** 재시작해야 합니다. 웹의 Vercel 배포는 Mac의 번들을 갱신하지 않습니다.
+
+실행 시 `FACTORIO_LOCAL_STATUS=1`, `FACTORIO_SERVER_DIR`, `FACTORIO_BRIDGE_SECRET`, `FACTORIO_SETTINGS_PASSWORD`가 필요합니다. 운영 비밀값은 Mac의 보호된 파일에 보관합니다. 문제가 있으면 보관된 `start.nextjs.sh`를 `start.sh`로 복원하고 에이전트를 재시작할 수 있습니다.

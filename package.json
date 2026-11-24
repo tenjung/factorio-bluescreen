@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:agent": "esbuild agent/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=.agent-build/server.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -25,6 +26,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "esbuild": "0.25.12",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "^4.0.0",
