@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -68,6 +68,65 @@ export function NewWorld({ password }: { password: string }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  const [prepared, setPrepared] = useState<string[]>([]);
+  const [selected, setSelected] = useState("");
+  const [listError, setListError] = useState(false);
+  const switchEndpoint = "/api/server-status?view=switch-world";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(switchEndpoint, {
+      headers: { "x-settings-password": password },
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Cannot load prepared worlds");
+        const worlds: string[] = await response.json();
+        setPrepared(worlds);
+        setSelected((current) => current || worlds[0] || "");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setListError(true);
+      });
+    return () => controller.abort();
+  }, [password]);
+
+  async function activate() {
+    if (
+      !selected ||
+      !window.confirm(
+        `${selected} 월드로 전환할까요? 현재 월드를 백업하고 서버를 재시작합니다. 접속 중인 플레이어는 연결이 끊깁니다.`,
+      )
+    )
+      return;
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch(switchEndpoint, {
+        method: "POST",
+        headers: {
+          "x-settings-password": password,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: selected, confirmDisconnect: true }),
+      });
+      if (!response.ok) throw new Error("Switch failed");
+      const result = await response.json();
+      setMessage(
+        `새 월드로 전환했습니다. ${result.name} · 백업 ${result.backup}`,
+      );
+      setPrepared((current) => current.filter((name) => name !== selected));
+      setSelected("");
+    } catch {
+      setMessage(
+        "전환 결과를 확인하지 못했습니다. 다시 시도하기 전에 상황판에서 서버 상태를 확인하세요.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function request(create: boolean) {
     setLoading(true);
     setMessage("");
@@ -83,6 +142,8 @@ export function NewWorld({ password }: { password: string }) {
       if (!response.ok) throw new Error("World request failed");
       if (create) {
         const result = await response.json();
+        setPrepared((current) => [result.name, ...current]);
+        setSelected(result.name);
         setMessage(`새 월드를 생성했습니다. ${result.name} · 서버 전환 대기`);
       } else {
         const defaults: World = await response.json();
@@ -120,6 +181,38 @@ export function NewWorld({ password }: { password: string }) {
         )}
       </CardHeader>
       <CardContent>
+        {listError && <p>준비된 월드 목록을 읽지 못했습니다.</p>}
+        {prepared.length > 0 && (
+          <div className="mb-5 grid gap-3 rounded-md border border-border p-4">
+            <Label htmlFor="prepared-world">준비된 월드</Label>
+            <div className="flex flex-wrap gap-3">
+              <select
+                id="prepared-world"
+                className="log-select max-w-full"
+                value={selected}
+                disabled={loading}
+                onChange={(event) => setSelected(event.target.value)}
+              >
+                <option value="">월드 선택</option>
+                {prepared.map((name) => (
+                  <option value={name} key={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                disabled={loading || !selected}
+                onClick={() => void activate()}
+              >
+                선택한 월드로 전환
+              </Button>
+            </div>
+            <p className="section-caption">
+              기존 월드를 백업하고 서버를 재시작합니다.
+            </p>
+          </div>
+        )}
         {world && (
           <form
             className="grid gap-5"

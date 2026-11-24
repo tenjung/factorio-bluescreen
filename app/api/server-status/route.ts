@@ -1,5 +1,6 @@
 import { factorioWorld } from "@/lib/factorio-world";
 import { factorioSettings } from "@/lib/factorio-settings";
+import { preparedWorlds, switchWorld } from "@/lib/factorio-switch";
 import { timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
@@ -26,9 +27,7 @@ export async function POST(request: Request) {
   }
   return handle(
     request,
-    new URL(request.url).searchParams.get("view") === "world"
-      ? "world"
-      : "settings",
+    settingsView(new URL(request.url).searchParams.get("view")),
   );
 }
 
@@ -36,11 +35,20 @@ export async function GET(request: Request) {
   const view = new URL(request.url).searchParams.get("view");
   return handle(
     request,
-    view === "world" || view === "settings" ? view : "status",
+    view === "switch-world" || view === "world" || view === "settings"
+      ? view
+      : "status",
   );
 }
 
-async function handle(request: Request, view: "world" | "settings" | "status") {
+function settingsView(view: string | null) {
+  return view === "world" || view === "switch-world" ? view : "settings";
+}
+
+async function handle(
+  request: Request,
+  view: "world" | "settings" | "status" | "switch-world",
+) {
   const settings = view !== "status";
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
@@ -85,7 +93,11 @@ async function handle(request: Request, view: "world" | "settings" | "status") {
         cache: "no-store",
         redirect: "error",
         signal: AbortSignal.timeout(
-          view === "world" ? 55000 : settings ? 12000 : 5000,
+          view === "world" || view === "switch-world"
+            ? 55000
+            : settings
+              ? 12000
+              : 5000,
         ),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
@@ -114,6 +126,19 @@ async function handle(request: Request, view: "world" | "settings" | "status") {
     if (settings) {
       const root = process.env.FACTORIO_SERVER_DIR;
       if (!root) throw new Error("Missing dedicated server directory");
+      if (view === "switch-world") {
+        if (request.method === "GET")
+          return Response.json(await preparedWorlds(root), { headers });
+        const input = await request.json();
+        if (input.confirmDisconnect !== true)
+          return Response.json(
+            { error: "confirmation_required" },
+            { status: 400, headers },
+          );
+        return Response.json(await switchWorld(root, input.name, true), {
+          headers,
+        });
+      }
       return Response.json(
         await (view === "world"
           ? factorioWorld(root, request)
