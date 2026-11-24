@@ -299,7 +299,11 @@ export function LiveStatus({
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
       {page === "chat" && (
-        <ServerChat running={status?.running} readOnly={publicView} />
+        <ServerChat
+          running={status?.running}
+          readOnly={publicView}
+          refreshKey={refreshKey}
+        />
       )}
       {page === "settings" &&
         (publicView ? (

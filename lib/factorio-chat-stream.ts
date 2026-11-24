@@ -104,8 +104,8 @@ export function factorioChatStream(request: Request) {
           finish();
           return;
         }
-        void refresh();
       }
+      void refresh();
     },
     cancel() {
       finish();

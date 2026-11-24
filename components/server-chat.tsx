@@ -9,9 +9,11 @@ const endpoint = "/api/server-status?view=chat";
 
 export function ServerChat({
   running,
+  refreshKey,
   readOnly = false,
 }: {
   running?: boolean;
+  refreshKey: number;
   readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<string[]>();
@@ -21,6 +23,7 @@ export function ServerChat({
   const [feedback, setFeedback] = useState("");
   const chatList = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
+  const latest = useRef<string | undefined>(undefined);
 
   useLayoutEffect(() => {
     const list = chatList.current;
@@ -29,7 +32,6 @@ export function ServerChat({
 
   useEffect(() => {
     let stream: EventSource | undefined;
-    let latest: string | undefined;
     function syncVisibility() {
       if (document.hidden) {
         stream?.close();
@@ -40,8 +42,8 @@ export function ServerChat({
       stream = new EventSource(`${endpoint}&stream=1`);
       stream.onmessage = ({ data }) => {
         setError(false);
-        if (data !== latest) {
-          latest = data;
+        if (data !== latest.current) {
+          latest.current = data;
           setMessages(JSON.parse(data));
         }
       };
@@ -53,7 +55,7 @@ export function ServerChat({
       document.removeEventListener("visibilitychange", syncVisibility);
       stream?.close();
     };
-  }, []);
+  }, [refreshKey]);
 
   async function send() {
     setSending(true);
