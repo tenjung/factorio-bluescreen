@@ -13,8 +13,8 @@ import {
 } from "@/lib/factorio-switch";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readdir, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 
@@ -166,6 +166,8 @@ async function handle(
           memoryMiB: status.memoryMiB,
           checkedAt: status.checkedAt,
           players: status.players,
+          playerEvents: status.playerEvents,
+          world: status.world,
           saves: status.saves,
           logs: Array.isArray(status.logs)
             ? status.logs.map((line: string) =>
@@ -298,6 +300,24 @@ async function handle(
   }
 }
 
+async function loadedWorld(root: string) {
+  try {
+    const file = await open(join(root, "data/factorio-current.log"), "r");
+    try {
+      const buffer = Buffer.alloc(128 * 1024);
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      const match = /Loading map (.+?\.zip): \d+ bytes\./.exec(
+        buffer.toString("utf8", 0, bytesRead),
+      );
+      return match ? basename(match[1]) : null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 async function readFactorioStatus() {
   const { stdout } = await run(
     "/bin/ps",
@@ -316,17 +336,19 @@ async function readFactorioStatus() {
   const row = processes[0]?.trim().split(/\s+/, 5);
   const root = process.env.FACTORIO_SERVER_DIR;
   if (!root) throw new Error("Missing dedicated server directory");
-  const [playerOutput, logOutput, entries] = await Promise.allSettled([
-    row
-      ? run(join(root, "rcon.sh"), ["/players online"], { timeout: 3000 })
-      : Promise.resolve(null),
-    run(
-      "/usr/bin/tail",
-      ["-n", "300", join(homedir(), "Library/Logs/factorio-server.log")],
-      { timeout: 3000 },
-    ),
-    readdir(join(root, "data/saves"), { withFileTypes: true }),
-  ]);
+  const [playerOutput, logOutput, entries, worldResult] =
+    await Promise.allSettled([
+      row
+        ? run(join(root, "rcon.sh"), ["/players online"], { timeout: 3000 })
+        : Promise.resolve(null),
+      run(
+        "/usr/bin/tail",
+        ["-n", "5000", join(homedir(), "Library/Logs/factorio-server.log")],
+        { timeout: 3000 },
+      ),
+      readdir(join(root, "data/saves"), { withFileTypes: true }),
+      row ? loadedWorld(root) : Promise.resolve(null),
+    ]);
   const playerText =
     playerOutput.status === "fulfilled"
       ? playerOutput.value?.stdout
@@ -338,6 +360,22 @@ async function readFactorioStatus() {
           playerText.matchAll(/^ +(.+) \(online\)$/gm),
           ([, name]) => name,
         )
+      : null;
+  const playerEvents =
+    logOutput.status === "fulfilled"
+      ? logOutput.value.stdout
+          .split("\n")
+          .flatMap((line) => {
+            const event =
+              /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(JOIN|LEAVE)\] (.+?) (?:joined|left) the game\s*$/.exec(
+                line,
+              );
+            return event
+              ? [{ at: event[1], action: event[2], player: event[3] }]
+              : [];
+          })
+          .slice(-30)
+          .reverse()
       : null;
   const logs =
     logOutput.status === "fulfilled"
@@ -372,6 +410,8 @@ async function readFactorioStatus() {
   saves?.sort((a, b) => b.modified.localeCompare(a.modified));
   const snapshot = {
     players,
+    playerEvents,
+    world: worldResult.status === "fulfilled" ? worldResult.value : null,
     logs,
     saves,
     running: Boolean(row),

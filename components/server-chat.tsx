@@ -17,6 +17,7 @@ export function ServerChat({
   readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<string[]>();
+  const [unread, setUnread] = useState(0);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
   const [sending, setSending] = useState(false);
@@ -24,6 +25,7 @@ export function ServerChat({
   const chatList = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const latest = useRef<string | undefined>(undefined);
+  const previousMessages = useRef<string[]>([]);
 
   useLayoutEffect(() => {
     const list = chatList.current;
@@ -43,8 +45,23 @@ export function ServerChat({
       stream.onmessage = ({ data }) => {
         setError(false);
         if (data !== latest.current) {
+          const incoming: string[] = JSON.parse(data);
+          if (latest.current !== undefined && !followLatest.current) {
+            const previous = previousMessages.current;
+            let overlap = Math.min(previous.length, incoming.length);
+            while (
+              overlap &&
+              !previous
+                .slice(-overlap)
+                .every((line, index) => line === incoming[index])
+            )
+              overlap--;
+            const added = incoming.length - overlap;
+            if (added > 0) setUnread((count) => count + added);
+          }
           latest.current = data;
-          setMessages(JSON.parse(data));
+          previousMessages.current = incoming;
+          setMessages(incoming);
         }
       };
       stream.onerror = () => setError(true);
@@ -97,6 +114,7 @@ export function ServerChat({
             const list = event.currentTarget;
             followLatest.current =
               list.scrollHeight - list.clientHeight - list.scrollTop <= 24;
+            if (followLatest.current) setUnread(0);
           }}
         >
           {messages?.length ? (
@@ -116,6 +134,22 @@ export function ServerChat({
             </p>
           )}
         </div>
+        {unread > 0 && (
+          <div className="mt-2 flex justify-end">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                followLatest.current = true;
+                const list = chatList.current;
+                if (list) list.scrollTop = list.scrollHeight;
+                setUnread(0);
+              }}
+            >
+              새 메시지 {unread}개 ↓
+            </Button>
+          </div>
+        )}
         {error && (
           <p className="section-caption">게임 채팅에 다시 연결하는 중입니다.</p>
         )}

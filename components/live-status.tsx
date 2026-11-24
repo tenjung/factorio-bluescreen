@@ -21,6 +21,10 @@ import { useEffect, useState } from "react";
 
 type Status = {
   playerCount?: number | null;
+  world?: string | null;
+  playerEvents?:
+    | { at: string; action: "JOIN" | "LEAVE"; player: string }[]
+    | null;
   running: boolean;
   uptime: string | null;
   cpu: number | null;
@@ -36,15 +40,18 @@ const formatTime = (value: string) =>
 
 export function LiveStatus({
   publicView = false,
+  publicAddress,
   page,
   refreshKey,
   navigate,
 }: {
   publicView?: boolean;
+  publicAddress?: string;
   page: string;
   refreshKey: number;
   navigate: (page: string) => void;
 }) {
+  const [addressFeedback, setAddressFeedback] = useState("");
   const [history, setHistory] = useState<Status[]>([]);
   const [metric, setMetric] = useState("cpu");
   const [connection, setConnection] = useState<
@@ -284,6 +291,45 @@ export function LiveStatus({
         </div>
       </div>
       {page === "players" && playersCard}
+      {page === "players" && (
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle>접속·퇴장 기록</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {status?.playerEvents?.length ? (
+              <ol className="divide-y divide-border">
+                {status.playerEvents.map(({ at, action, player }, index) => (
+                  <li
+                    key={`${at}-${action}-${player}-${index}`}
+                    className="flex flex-wrap items-center gap-3 py-3"
+                  >
+                    <time
+                      className="text-sm text-muted-foreground"
+                      dateTime={`${at.replace(" ", "T")}+09:00`}
+                    >
+                      {at.slice(5)}
+                    </time>
+                    <Badge
+                      variant="outline"
+                      className={action === "JOIN" ? "badge-green" : undefined}
+                    >
+                      {action === "JOIN" ? "접속" : "퇴장"}
+                    </Badge>
+                    <span className="break-all">{player}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="section-caption">
+                {status?.playerEvents
+                  ? "최근 접속·퇴장 기록이 없습니다."
+                  : "접속 기록을 확인하는 중입니다."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
       {page === "chat" && (
@@ -338,8 +384,56 @@ export function LiveStatus({
                 <p>
                   Mac mini <span className="metadata-divider" /> 실시간 조회
                 </p>
+                <p className="flex flex-wrap gap-x-4">
+                  <span>
+                    현재 월드{" "}
+                    <strong className="break-all text-foreground">
+                      {status?.world ??
+                        (status?.running === false ? "서버 중지됨" : "확인 중")}
+                    </strong>
+                  </span>
+                  <span>
+                    최근 세이브 수정{" "}
+                    <strong className="text-foreground">
+                      {recentSave
+                        ? new Date(recentSave.modified).toLocaleString(
+                            "ko-KR",
+                            { timeZone: "Asia/Seoul" },
+                          )
+                        : "—"}
+                    </strong>
+                  </span>
+                </p>
               </div>
             </div>
+            {publicView && publicAddress && (
+              <div className="grid gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Factorio 외부 접속 주소
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="break-all">{publicAddress}</code>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(publicAddress);
+                        setAddressFeedback("접속 주소를 복사했습니다.");
+                      } catch {
+                        setAddressFeedback("주소를 선택해 복사하세요.");
+                      }
+                    }}
+                  >
+                    주소 복사
+                  </Button>
+                </div>
+                {addressFeedback && (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    {addressFeedback}
+                  </p>
+                )}
+              </div>
+            )}
             {!publicView && (
               <Button variant="outline" onClick={() => navigate("settings")}>
                 서버 설정

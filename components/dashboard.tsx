@@ -213,9 +213,11 @@ function PerformanceChart({ metric }: { metric: string }) {
 export function Dashboard({
   live = false,
   publicView = false,
+  publicAddress,
 }: {
   live?: boolean;
   publicView?: boolean;
+  publicAddress?: string;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const pathname = usePathname();
@@ -442,6 +444,7 @@ export function Dashboard({
           {live ? (
             <LiveStatus
               publicView={publicView}
+              publicAddress={publicAddress}
               page={page}
               refreshKey={refreshKey}
               navigate={navigate}

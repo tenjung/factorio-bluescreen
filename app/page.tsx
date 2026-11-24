@@ -13,6 +13,11 @@ export default function Page() {
     <Dashboard
       live={publicView || remote || process.env.FACTORIO_LOCAL_STATUS === "1"}
       publicView={publicView}
+      publicAddress={
+        publicView
+          ? process.env.FACTORIO_PUBLIC_CONNECT_ADDRESS?.trim()
+          : undefined
+      }
     />
   );
 }
