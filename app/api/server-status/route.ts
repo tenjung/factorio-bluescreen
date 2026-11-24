@@ -6,7 +6,7 @@ import {
   preparedWorlds,
   switchWorld,
 } from "@/lib/factorio-switch";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,6 +16,14 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+function statusResponse(request: Request, body: unknown, revision: unknown) {
+  const tag = `"${createHash("sha256").update(JSON.stringify(revision)).digest("base64url")}"`;
+  const headers = { "Cache-Control": "no-store", ETag: tag };
+  if (request.headers.get("if-none-match") === tag)
+    return new Response(null, { status: 304, headers });
+  return Response.json(body, { headers });
+}
 
 export async function POST(request: Request) {
   if (process.env.VERCEL_ENV === "production")
@@ -129,27 +137,37 @@ async function handle(
       if (!upstream.ok) throw new Error("Bridge unavailable");
       const status = await upstream.json();
       if (publicView && view === "status") {
-        return Response.json(
-          {
-            running: status.running,
-            uptime: status.uptime,
-            cpu: status.cpu,
-            memoryMiB: status.memoryMiB,
-            checkedAt: status.checkedAt,
-            players: status.players,
-            saves: status.saves,
-            logs: Array.isArray(status.logs)
-              ? status.logs.map((line: string) =>
-                  line.replace(
-                    /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
-                    (path) => path.split("/").at(-1) ?? "",
-                  ),
-                )
-              : null,
-          },
-          { headers },
-        );
+        const snapshot = {
+          running: status.running,
+          uptime: status.uptime,
+          cpu: status.cpu,
+          memoryMiB: status.memoryMiB,
+          checkedAt: status.checkedAt,
+          players: status.players,
+          saves: status.saves,
+          logs: Array.isArray(status.logs)
+            ? status.logs.map((line: string) =>
+                line.replace(
+                  /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
+                  (path) => path.split("/").at(-1) ?? "",
+                ),
+              )
+            : null,
+        };
+        return statusResponse(request, snapshot, [
+          snapshot.running,
+          snapshot.players,
+          snapshot.logs,
+        ]);
       }
+      if (view === "status")
+        return statusResponse(request, status, [
+          status.running,
+          status.players,
+          status.logs,
+        ]);
+      if (view === "chat" && request.method === "GET")
+        return statusResponse(request, status, status);
       return Response.json(status, { headers });
     } catch {
       return Response.json({ error: "unavailable" }, { status: 503, headers });
@@ -316,19 +334,17 @@ async function handle(
           ).catch(() => null)
         : null;
     saves?.sort((a, b) => b.modified.localeCompare(a.modified));
-    return Response.json(
-      {
-        players,
-        logs,
-        saves,
-        running: Boolean(row),
-        uptime: row?.[1] ?? null,
-        cpu: row ? Number(row[2]) : null,
-        memoryMiB: row ? Math.round(Number(row[3]) / 1024) : null,
-        checkedAt: new Date().toISOString(),
-      },
-      { headers },
-    );
+    const snapshot = {
+      players,
+      logs,
+      saves,
+      running: Boolean(row),
+      uptime: row?.[1] ?? null,
+      cpu: row ? Number(row[2]) : null,
+      memoryMiB: row ? Math.round(Number(row[3]) / 1024) : null,
+      checkedAt: new Date().toISOString(),
+    };
+    return statusResponse(request, snapshot, [snapshot.running, players, logs]);
   } catch {
     return Response.json({ error: "unavailable" }, { status: 503, headers });
   }

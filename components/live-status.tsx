@@ -53,18 +53,23 @@ export function LiveStatus({
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const controller = new AbortController();
+    let etag: string | null = null;
 
     async function refresh() {
       try {
+        if (document.hidden) return;
         const response = await fetch("/api/server-status", {
           cache: "no-store",
+          headers: etag ? { "If-None-Match": etag } : undefined,
           signal: AbortSignal.any([
             controller.signal,
             AbortSignal.timeout(4000),
           ]),
         });
+        if (response.status === 304) return;
         if (!response.ok) throw new Error("Status unavailable");
         const result: Status = await response.json();
+        etag = response.headers.get("etag");
         if (!stopped) {
           setStatus(result);
           setHistory((previous) =>
@@ -79,11 +84,12 @@ export function LiveStatus({
           );
         }
       } catch {
+        etag = null;
         if (!stopped) setStatus(undefined);
       } finally {
         if (!stopped) {
           setChecked(true);
-          timer = setTimeout(refresh, 5000);
+          timer = setTimeout(refresh, publicView ? 30000 : 15000);
         }
       }
     }
@@ -93,7 +99,7 @@ export function LiveStatus({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [refreshKey]);
+  }, [publicView, refreshKey]);
 
   const overview = page === "overview";
   const recentSave = status?.saves?.[0];
@@ -281,7 +287,7 @@ export function LiveStatus({
             </strong>
             <span className="banner-detail">
               {status
-                ? ` · 5초마다 갱신 · 마지막 확인 ${formatTime(status.checkedAt)} KST`
+                ? ` · 변경 시 갱신 · 마지막 반영 ${formatTime(status.checkedAt)} KST`
                 : checked
                   ? " · 서버에 다시 연결하고 있습니다."
                   : ""}
@@ -369,7 +375,7 @@ export function LiveStatus({
                 <div>
                   <CardTitle>서버 리소스</CardTitle>
                   <p className="section-caption">
-                    화면을 연 뒤 수집한 최근 10분
+                    접속자·로그 변경 시 기록한 최근 10분
                   </p>
                 </div>
                 <Tabs value={metric} onValueChange={setMetric}>

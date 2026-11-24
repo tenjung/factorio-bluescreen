@@ -29,24 +29,33 @@ export function ServerChat({
 
   useEffect(() => {
     const controller = new AbortController();
+    let etag: string | null = null;
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
       try {
+        if (document.hidden) return;
         const response = await fetch(endpoint, {
           cache: "no-store",
+          headers: etag ? { "If-None-Match": etag } : undefined,
           signal: AbortSignal.any([
             controller.signal,
             AbortSignal.timeout(5000),
           ]),
         });
         if (controller.signal.aborted) return;
+        if (response.status === 304) {
+          setError(false);
+          return;
+        }
         if (!response.ok) throw new Error("Chat unavailable");
         setMessages(await response.json());
+        etag = response.headers.get("etag");
         setError(false);
       } catch {
         if (!controller.signal.aborted) setError(true);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(refresh, 5000);
+        if (!controller.signal.aborted)
+          timer = setTimeout(refresh, readOnly ? 30000 : 5000);
       }
     }
     void refresh();
@@ -54,7 +63,7 @@ export function ServerChat({
       controller.abort();
       clearTimeout(timer);
     };
-  }, []);
+  }, [readOnly]);
 
   async function send() {
     setSending(true);
@@ -82,7 +91,9 @@ export function ServerChat({
       <CardHeader>
         <div>
           <CardTitle>게임 채팅</CardTitle>
-          <p className="section-caption">최근 채팅 최대 50개 · 5초마다 갱신</p>
+          <p className="section-caption">
+            최근 채팅 최대 50개 · 새 메시지가 있을 때 갱신
+          </p>
         </div>
       </CardHeader>
       <CardContent>
