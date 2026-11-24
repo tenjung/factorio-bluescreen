@@ -28,42 +28,32 @@ export function ServerChat({
   }, [messages]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    let etag: string | null = null;
-    let timer: ReturnType<typeof setTimeout>;
-    async function refresh() {
-      try {
-        if (document.hidden) return;
-        const response = await fetch(endpoint, {
-          cache: "no-store",
-          headers: etag ? { "If-None-Match": etag } : undefined,
-          signal: AbortSignal.any([
-            controller.signal,
-            AbortSignal.timeout(5000),
-          ]),
-        });
-        if (controller.signal.aborted) return;
-        if (response.status === 304) {
-          setError(false);
-          return;
-        }
-        if (!response.ok) throw new Error("Chat unavailable");
-        setMessages(await response.json());
-        etag = response.headers.get("etag");
-        setError(false);
-      } catch {
-        if (!controller.signal.aborted) setError(true);
-      } finally {
-        if (!controller.signal.aborted)
-          timer = setTimeout(refresh, readOnly ? 30000 : 5000);
+    let stream: EventSource | undefined;
+    let latest: string | undefined;
+    function syncVisibility() {
+      if (document.hidden) {
+        stream?.close();
+        stream = undefined;
+        return;
       }
+      if (stream) return;
+      stream = new EventSource(`${endpoint}&stream=1`);
+      stream.onmessage = ({ data }) => {
+        setError(false);
+        if (data !== latest) {
+          latest = data;
+          setMessages(JSON.parse(data));
+        }
+      };
+      stream.onerror = () => setError(true);
     }
-    void refresh();
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
     return () => {
-      controller.abort();
-      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", syncVisibility);
+      stream?.close();
     };
-  }, [readOnly]);
+  }, []);
 
   async function send() {
     setSending(true);
@@ -125,7 +115,7 @@ export function ServerChat({
           )}
         </div>
         {error && (
-          <p className="section-caption">채팅을 갱신하지 못했습니다.</p>
+          <p className="section-caption">게임 채팅에 다시 연결하는 중입니다.</p>
         )}
         {!readOnly && (
           <>

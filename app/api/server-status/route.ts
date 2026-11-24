@@ -1,3 +1,7 @@
+import {
+  chatStreamHeaders,
+  factorioChatStream,
+} from "@/lib/factorio-chat-stream";
 import { factorioAddresses } from "@/lib/factorio-addresses";
 import { factorioWorld } from "@/lib/factorio-world";
 import { factorioSettings } from "@/lib/factorio-settings";
@@ -81,6 +85,10 @@ async function handle(
     | "addresses",
 ) {
   const settings = view !== "status";
+  const chatStream =
+    view === "chat" &&
+    request.method === "GET" &&
+    new URL(request.url).searchParams.get("stream") === "1";
   const publicView = process.env.VERCEL_ENV === "production";
   if (publicView && settings && view !== "chat")
     return new Response(null, { status: 404 });
@@ -111,6 +119,7 @@ async function handle(
     try {
       const url = new URL(process.env.FACTORIO_BRIDGE_URL);
       if (settings) url.searchParams.set("view", view);
+      if (chatStream) url.searchParams.set("stream", "1");
       const upstream = await fetch(url, {
         method: request.method,
         body: request.method === "POST" ? await request.text() : undefined,
@@ -126,15 +135,24 @@ async function handle(
         },
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(
-          view === "world" || view === "switch-world" || view === "control"
-            ? 55000
-            : settings
-              ? 12000
-              : 5000,
-        ),
+        signal: chatStream
+          ? AbortSignal.any([request.signal, AbortSignal.timeout(50000)])
+          : AbortSignal.timeout(
+              view === "world" || view === "switch-world" || view === "control"
+                ? 55000
+                : settings
+                  ? 12000
+                  : 5000,
+            ),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
+      if (chatStream) {
+        if (
+          !upstream.headers.get("content-type")?.startsWith("text/event-stream")
+        )
+          throw new Error("Expected chat stream");
+        return new Response(upstream.body, { headers: chatStreamHeaders });
+      }
       const status = await upstream.json();
       if (publicView && view === "status") {
         const snapshot = {
@@ -196,6 +214,7 @@ async function handle(
       if (view === "addresses")
         return Response.json(await factorioAddresses(), { headers });
       if (view === "chat") {
+        if (chatStream) return factorioChatStream(request);
         if (request.method === "GET") {
           const { stdout } = await run(
             "/usr/bin/tail",
