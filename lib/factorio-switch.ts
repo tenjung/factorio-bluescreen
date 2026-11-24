@@ -194,3 +194,88 @@ export async function switchWorld(
     switching = false;
   }
 }
+
+export async function controlFactorio(root: string, action: unknown) {
+  if (
+    action !== "start" &&
+    action !== "restart" &&
+    action !== "stop" &&
+    action !== "save"
+  ) {
+    throw new Error("Invalid server action");
+  }
+  if (switching) throw new Error("Another server operation is running");
+  switching = true;
+  const domain = `gui/${process.getuid?.()}`;
+  const service = `${domain}/${label}`;
+  const plist = join(homedir(), "Library/LaunchAgents", `${label}.plist`);
+  const launch = (...args: string[]) =>
+    run("/bin/launchctl", args, { timeout: 12000 });
+  const rcon = (command: string) =>
+    run(join(root, "rcon.sh"), [command], { timeout: 2000 });
+  const pid = () =>
+    launch("print", service).then(
+      ({ stdout }) => Number(/^\s*pid = (\d+)$/m.exec(stdout)?.[1]) || null,
+      () => null,
+    );
+  const ownsLock = () =>
+    run("/usr/sbin/lsof", ["-t", join(root, "data/.lock")], {
+      timeout: 1500,
+    }).then(
+      () => true,
+      (error) => {
+        if (error.code === 1) return false;
+        throw error;
+      },
+    );
+  try {
+    const source = join(root, `${label}.plist`);
+    if ((await readFile(plist, "utf8")) !== (await readFile(source, "utf8")))
+      throw new Error("Unexpected service definition");
+    const before = await pid();
+    if (action === "start") {
+      if (before || (await ownsLock()))
+        throw new Error("Server already running");
+      await launch("bootstrap", domain, plist);
+    } else {
+      if (!before) throw new Error("Managed server is not running");
+      const name = `web-save-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      await rcon(`/save ${name}`);
+      const save = join(root, "data/saves", `${name}.zip`);
+      for (let i = 0; ; i++) {
+        const ready = await run("/usr/bin/unzip", ["-tq", save], {
+          timeout: 1000,
+        }).then(
+          () => true,
+          () => false,
+        );
+        if (ready) break;
+        if (i === 19) throw new Error("Save verification failed");
+        await sleep(250);
+      }
+      if (action === "save") return { running: true, save: `${name}.zip` };
+      await launch("bootout", service);
+      for (let i = 0; i < 25 && (await ownsLock()); i++) await sleep(300);
+      if (await ownsLock())
+        throw new Error("Server has not released its data lock");
+      if (action === "stop") return { running: false };
+      await launch("bootstrap", domain, plist);
+    }
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      const current = await pid();
+      if (
+        current &&
+        current !== before &&
+        (await rcon("/players online").then(
+          ({ stdout }) => /^Online players \(\d+\):/m.test(stdout),
+          () => false,
+        ))
+      )
+        return { running: true };
+    }
+    throw new Error("Server startup was not verified");
+  } finally {
+    switching = false;
+  }
+}

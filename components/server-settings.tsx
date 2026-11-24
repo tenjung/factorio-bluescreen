@@ -1,5 +1,6 @@
 "use client";
 
+import { ServerChat } from "@/components/server-chat";
 import { NewWorld } from "@/components/new-world";
 
 import { useEffect, useState } from "react";
@@ -106,7 +107,57 @@ function Setting({
   );
 }
 
-export function ServerSettings({ refreshKey }: { refreshKey: number }) {
+export function ServerSettings({
+  refreshKey,
+  running,
+}: {
+  refreshKey: number;
+  running?: boolean;
+}) {
+  const [operation, setOperation] = useState("");
+  const [controlMessage, setControlMessage] = useState("");
+  const [settingsRefresh, setSettingsRefresh] = useState(0);
+
+  async function control(action: "save" | "start" | "stop" | "restart") {
+    const label = {
+      save: "저장",
+      start: "시작",
+      stop: "종료",
+      restart: "재시작",
+    }[action];
+    if (
+      (action === "stop" || action === "restart") &&
+      !window.confirm(
+        `현재 월드를 저장하고 서버를 ${label}할까요? 접속 중인 플레이어의 연결이 끊깁니다.`,
+      )
+    )
+      return;
+    setOperation(action);
+    setControlMessage(`${label} 중…`);
+    try {
+      const response = await fetch("/api/server-status?view=control", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-settings-password": password,
+        },
+        body: JSON.stringify({ action, confirmed: true }),
+      });
+      if (!response.ok) throw new Error("Control failed");
+      const result = await response.json();
+      setControlMessage(
+        result.save ? `저장 완료 · ${result.save}` : `${label} 완료`,
+      );
+      setSettingsRefresh((value) => value + 1);
+    } catch {
+      setControlMessage(
+        `${label} 결과를 확인하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.`,
+      );
+    } finally {
+      setOperation("");
+    }
+  }
+
   const [draftPassword, setDraftPassword] = useState("");
   const [password, setPassword] = useState("");
   const [settings, setSettings] = useState<Settings>();
@@ -136,7 +187,7 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
           setMessage("설정을 읽지 못했습니다. 새로고침으로 다시 시도하세요.");
       });
     return () => controller.abort();
-  }, [refreshKey, password]);
+  }, [refreshKey, password, settingsRefresh]);
 
   async function save(key: Field["key"], value: number | boolean) {
     setBusy(true);
@@ -200,6 +251,45 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
+      <Card className="mb-5">
+        <CardHeader>
+          <CardTitle>서버 제어</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={Boolean(operation) || running !== true}
+              onClick={() => void control("save")}
+            >
+              저장
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(operation) || running === undefined}
+              onClick={() => void control(running ? "restart" : "start")}
+            >
+              {running === false ? "시작" : "재시작"}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={Boolean(operation) || running !== true}
+              onClick={() => void control("stop")}
+            >
+              종료
+            </Button>
+          </div>
+          <p className="section-caption" role="status">
+            {controlMessage ||
+              (running === undefined
+                ? "서버 상태 확인 중"
+                : running
+                  ? "서버 실행 중"
+                  : "서버 중지됨")}
+          </p>
+        </CardContent>
+      </Card>
+      <ServerChat password={password} running={running} />
       <Card>
         <CardHeader>
           <div>
@@ -228,7 +318,7 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
           )}
         </CardContent>
       </Card>
-      {settings && <NewWorld password={password} />}
+      {settings && !operation && <NewWorld password={password} />}
     </>
   );
 }

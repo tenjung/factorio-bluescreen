@@ -1,6 +1,10 @@
 import { factorioWorld } from "@/lib/factorio-world";
 import { factorioSettings } from "@/lib/factorio-settings";
-import { preparedWorlds, switchWorld } from "@/lib/factorio-switch";
+import {
+  controlFactorio,
+  preparedWorlds,
+  switchWorld,
+} from "@/lib/factorio-switch";
 import { timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
@@ -35,19 +39,27 @@ export async function GET(request: Request) {
   const view = new URL(request.url).searchParams.get("view");
   return handle(
     request,
-    view === "switch-world" || view === "world" || view === "settings"
+    view === "switch-world" ||
+      view === "world" ||
+      view === "settings" ||
+      view === "chat"
       ? view
       : "status",
   );
 }
 
 function settingsView(view: string | null) {
-  return view === "world" || view === "switch-world" ? view : "settings";
+  return view === "world" ||
+    view === "switch-world" ||
+    view === "control" ||
+    view === "chat"
+    ? view
+    : "settings";
 }
 
 async function handle(
   request: Request,
-  view: "world" | "settings" | "status" | "switch-world",
+  view: "world" | "settings" | "status" | "switch-world" | "control" | "chat",
 ) {
   const settings = view !== "status";
   const headers = { "Cache-Control": "no-store" };
@@ -93,7 +105,7 @@ async function handle(
         cache: "no-store",
         redirect: "error",
         signal: AbortSignal.timeout(
-          view === "world" || view === "switch-world"
+          view === "world" || view === "switch-world" || view === "control"
             ? 55000
             : settings
               ? 12000
@@ -126,6 +138,54 @@ async function handle(
     if (settings) {
       const root = process.env.FACTORIO_SERVER_DIR;
       if (!root) throw new Error("Missing dedicated server directory");
+      if (view === "chat") {
+        if (request.method === "GET") {
+          const { stdout } = await run(
+            "/usr/bin/tail",
+            ["-n", "400", join(homedir(), "Library/Logs/factorio-server.log")],
+            { timeout: 3000 },
+          );
+          return Response.json(
+            stdout
+              .split("\n")
+              .filter((line) =>
+                /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[CHAT\] /.test(line),
+              )
+              .slice(-50),
+            { headers },
+          );
+        }
+        const { message } = await request.json();
+        if (
+          typeof message !== "string" ||
+          !message.trim() ||
+          message.length > 200 ||
+          [...message].some(
+            (character) =>
+              character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+          ) ||
+          message.trimStart().startsWith("/")
+        ) {
+          return Response.json(
+            { error: "invalid_chat" },
+            { status: 400, headers },
+          );
+        }
+        await run(join(root, "rcon.sh"), [`[웹 관리자] ${message.trim()}`], {
+          timeout: 2500,
+        });
+        return Response.json({ sent: true }, { headers });
+      }
+      if (view === "control") {
+        const { action, confirmed } = await request.json();
+        if (confirmed !== true && (action === "stop" || action === "restart")) {
+          return Response.json(
+            { error: "confirmation_required" },
+            { status: 400, headers },
+          );
+        }
+        return Response.json(await controlFactorio(root, action), { headers });
+      }
       if (view === "switch-world") {
         if (request.method === "GET")
           return Response.json(await preparedWorlds(root), { headers });

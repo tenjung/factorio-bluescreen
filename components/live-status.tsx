@@ -288,7 +288,9 @@ export function LiveStatus({
       {page === "players" && playersCard}
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
-      {page === "settings" && <ServerSettings refreshKey={refreshKey} />}
+      {page === "settings" && (
+        <ServerSettings refreshKey={refreshKey} running={status?.running} />
+      )}
       {overview && (
         <>
           <section className="server-banner" aria-label="실제 서버 상태">
@@ -314,17 +316,9 @@ export function LiveStatus({
                 </p>
               </div>
             </div>
-            <div className="server-actions" aria-label="서버 제어 연결 대기">
-              <Button variant="outline" disabled>
-                저장
-              </Button>
-              <Button variant="outline" disabled>
-                {status?.running === false ? "시작" : "재시작"}
-              </Button>
-              <Button variant="outline" className="stop-button" disabled>
-                종료
-              </Button>
-            </div>
+            <Button variant="outline" onClick={() => navigate("settings")}>
+              서버 설정
+            </Button>
           </section>
           <div className="stats-grid">
             {metrics.map(({ icon: Icon, label, value, suffix, detail }) => (
