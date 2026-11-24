@@ -1,3 +1,4 @@
+import { factorioAddresses } from "@/lib/factorio-addresses";
 import { factorioWorld } from "@/lib/factorio-world";
 import { factorioSettings } from "@/lib/factorio-settings";
 import {
@@ -42,7 +43,8 @@ export async function GET(request: Request) {
     view === "switch-world" ||
       view === "world" ||
       view === "settings" ||
-      view === "chat"
+      view === "chat" ||
+      view === "addresses"
       ? view
       : "status",
   );
@@ -59,7 +61,14 @@ function settingsView(view: string | null) {
 
 async function handle(
   request: Request,
-  view: "world" | "settings" | "status" | "switch-world" | "control" | "chat",
+  view:
+    | "world"
+    | "settings"
+    | "status"
+    | "switch-world"
+    | "control"
+    | "chat"
+    | "addresses",
 ) {
   const settings = view !== "status";
   const headers = { "Cache-Control": "no-store" };
@@ -138,6 +147,8 @@ async function handle(
     if (settings) {
       const root = process.env.FACTORIO_SERVER_DIR;
       if (!root) throw new Error("Missing dedicated server directory");
+      if (view === "addresses")
+        return Response.json(await factorioAddresses(), { headers });
       if (view === "chat") {
         if (request.method === "GET") {
           const { stdout } = await run(

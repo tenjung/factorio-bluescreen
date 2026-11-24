@@ -1,5 +1,6 @@
 "use client";
 
+import { ServerAddresses } from "@/components/server-addresses";
 import { NewWorld } from "@/components/new-world";
 
 import { useEffect, useState } from "react";
@@ -250,6 +251,7 @@ export function ServerSettings({
 
   return (
     <>
+      <ServerAddresses password={password} refreshKey={refreshKey} />
       <Card className="mb-5">
         <CardHeader>
           <CardTitle>서버 제어</CardTitle>
