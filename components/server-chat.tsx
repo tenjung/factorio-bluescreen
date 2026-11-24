@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,14 @@ export function ServerChat({ running }: { running?: boolean }) {
   const [error, setError] = useState(false);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const chatList = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+
+  useLayoutEffect(() => {
+    const list = chatList.current;
+    if (list && followLatest.current) list.scrollTop = list.scrollHeight;
+  }, [messages]);
+
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -75,10 +83,16 @@ export function ServerChat({ running }: { running?: boolean }) {
         <div
           className="terminal-lines max-h-72 overflow-y-auto rounded-md"
           aria-label="게임 채팅 목록"
+          ref={chatList}
+          onScroll={(event) => {
+            const list = event.currentTarget;
+            followLatest.current =
+              list.scrollHeight - list.clientHeight - list.scrollTop <= 24;
+          }}
         >
           {messages?.length ? (
             <ul className="space-y-2">
-              {[...messages].reverse().map((line, index) => (
+              {messages.map((line, index) => (
                 <li className="break-words text-sm" key={index}>
                   <span className="mr-2 text-muted-foreground">
                     {line.slice(11, 19)}
