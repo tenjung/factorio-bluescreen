@@ -2,6 +2,7 @@
 
 import { LiveStatus } from "@/components/live-status";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   Activity,
@@ -217,7 +218,11 @@ export function Dashboard({
   publicView?: boolean;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
-  const [page, setPage] = useState("overview");
+  const pathname = usePathname();
+  const page =
+    navigation.find(
+      ({ id }) => (id === "overview" ? "/" : `/${id}`) === pathname,
+    )?.id ?? "overview";
   const [mobileNav, setMobileNav] = useState(false);
   const [metric, setMetric] = useState("CPU");
   const [running, setRunning] = useState(true);
@@ -240,7 +245,8 @@ export function Dashboard({
       l.text.toLowerCase().includes(query.toLowerCase()),
   );
   function navigate(id: string) {
-    setPage(id);
+    const href = id === "overview" ? "/" : `/${id}`;
+    if (pathname !== href) window.history.pushState(null, "", href);
     setMobileNav(false);
     setQuery("");
   }
@@ -299,9 +305,15 @@ export function Dashboard({
           {navigation
             .filter((item) => live || item.id !== "chat")
             .map(({ id, label, icon: Icon }) => (
-              <button
+              <Link
                 key={id}
-                onClick={() => navigate(id)}
+                href={id === "overview" ? "/" : `/${id}`}
+                aria-current={page === id ? "page" : undefined}
+                prefetch={false}
+                onNavigate={(event) => {
+                  event.preventDefault();
+                  navigate(id);
+                }}
                 className={cn("nav-item", page === id && "active")}
               >
                 <Icon size={18} />
@@ -310,7 +322,7 @@ export function Dashboard({
                   <span className="nav-count">{running ? 3 : 0}</span>
                 ) : null}
                 {id === page ? <span className="active-line" /> : null}
-              </button>
+              </Link>
             ))}
         </nav>
         <div className="sidebar-link">

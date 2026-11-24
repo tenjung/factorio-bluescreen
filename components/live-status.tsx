@@ -47,7 +47,9 @@ export function LiveStatus({
 }) {
   const [history, setHistory] = useState<Status[]>([]);
   const [metric, setMetric] = useState("cpu");
-  const [checked, setChecked] = useState(false);
+  const [connection, setConnection] = useState<
+    "connecting" | "connected" | "reconnecting" | "paused"
+  >("connecting");
   const [status, setStatus] = useState<Status>();
   useEffect(() => {
     let stream: EventSource | undefined;
@@ -55,13 +57,16 @@ export function LiveStatus({
       if (document.hidden) {
         stream?.close();
         stream = undefined;
+        setConnection("paused");
         return;
       }
       if (stream) return;
+      setConnection("connecting");
       stream = new EventSource("/api/server-status?stream=1");
+      stream.onopen = () => setConnection("connected");
       stream.onmessage = ({ data }) => {
         const result: Status = JSON.parse(data);
-        setChecked(true);
+        setConnection("connected");
         setStatus(result);
         setHistory((previous) =>
           [
@@ -74,7 +79,7 @@ export function LiveStatus({
           ].slice(-120),
         );
       };
-      stream.onerror = () => setChecked(true);
+      stream.onerror = () => setConnection("reconnecting");
     }
     syncVisibility();
     document.addEventListener("visibilitychange", syncVisibility);
@@ -262,18 +267,18 @@ export function LiveStatus({
           <Radio size={16} />
           <span>
             <strong>
-              {status
-                ? "실시간 연결"
-                : checked
-                  ? "연결 확인 중"
-                  : "서버 연결 중"}
+              {connection === "reconnecting"
+                ? "재연결 중"
+                : connection === "paused"
+                  ? "연결 일시중지"
+                  : connection === "connected" && status
+                    ? "실시간 연결"
+                    : "서버 연결 중"}
             </strong>
             <span className="banner-detail">
               {status
-                ? ` · 변경 시 갱신 · 마지막 반영 ${formatTime(status.checkedAt)} KST`
-                : checked
-                  ? " · 서버에 다시 연결하고 있습니다."
-                  : ""}
+                ? ` · 마지막 수신 ${formatTime(status.checkedAt)} KST`
+                : ""}
             </span>
           </span>
         </div>
@@ -319,12 +324,14 @@ export function LiveStatus({
                 <div className="server-title">
                   <h2>팩토리오 전용 서버</h2>
                   <Badge
-                    className={status?.running ? "badge-green" : "badge-muted"}
+                    className={
+                      status?.running && connection === "connected"
+                        ? "badge-green"
+                        : "badge-muted"
+                    }
                   >
                     {status
-                      ? status.running
-                        ? "실행 중"
-                        : "중지됨"
+                      ? `${connection !== "connected" ? "마지막 상태 · " : ""}${status.running ? "실행 중" : "중지됨"}`
                       : "상태 확인 중"}
                   </Badge>
                 </div>
