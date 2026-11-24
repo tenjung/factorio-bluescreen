@@ -208,6 +208,7 @@ function PerformanceChart({ metric }: { metric: string }) {
 }
 
 export function Dashboard({ live = false }: { live?: boolean }) {
+  const [refreshKey, setRefreshKey] = useState(0);
   const [page, setPage] = useState("overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [metric, setMetric] = useState("CPU");
@@ -403,9 +404,11 @@ export function Dashboard({ live = false }: { live?: boolean }) {
             <Button
               variant="outline"
               onClick={() =>
-                setNotice(
-                  "미리보기 데이터를 표시하고 있습니다. 실시간 갱신은 에이전트 연결 후 사용할 수 있습니다.",
-                )
+                live
+                  ? setRefreshKey((key) => key + 1)
+                  : setNotice(
+                      "미리보기 데이터를 표시하고 있습니다. 실시간 갱신은 에이전트 연결 후 사용할 수 있습니다.",
+                    )
               }
             >
               <RefreshCw size={14} />
@@ -413,7 +416,11 @@ export function Dashboard({ live = false }: { live?: boolean }) {
             </Button>
           </div>
           {live ? (
-            <LiveStatus page={page} />
+            <LiveStatus
+              page={page}
+              refreshKey={refreshKey}
+              navigate={navigate}
+            />
           ) : (
             <>
               <div className="demo-banner">
@@ -1006,7 +1013,8 @@ export function Dashboard({ live = false }: { live?: boolean }) {
               must grow.
             </span>
             <span>
-              UI Preview <span className="footer-divider">·</span> v0.1.0
+              {live ? "실시간 조회" : "UI Preview"}{" "}
+              <span className="footer-divider">·</span> v0.1.0
             </span>
           </footer>
         </main>
