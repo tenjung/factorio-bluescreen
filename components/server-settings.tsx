@@ -1,5 +1,7 @@
 "use client";
 
+import { NewWorld } from "@/components/new-world";
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,33 +199,36 @@ export function ServerSettings({ refreshKey }: { refreshKey: number }) {
     );
 
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>서버 설정</CardTitle>
-          <p className="section-caption">
-            운영 중인 서버의 설정을 항목별로 변경합니다.
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {settings
-          ? fields.map((field) => (
-              <Setting
-                key={`${field.key}:${settings[field.key]}`}
-                field={field}
-                initial={settings[field.key]}
-                busy={busy}
-                onSave={save}
-              />
-            ))
-          : !message && <p>서버 설정을 읽는 중입니다.</p>}
-        {message && (
-          <p className="mt-4" role="status">
-            {message}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>서버 설정</CardTitle>
+            <p className="section-caption">
+              운영 중인 서버의 설정을 항목별로 변경합니다.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {settings
+            ? fields.map((field) => (
+                <Setting
+                  key={`${field.key}:${settings[field.key]}`}
+                  field={field}
+                  initial={settings[field.key]}
+                  busy={busy}
+                  onSave={save}
+                />
+              ))
+            : !message && <p>서버 설정을 읽는 중입니다.</p>}
+          {message && (
+            <p className="mt-4" role="status">
+              {message}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      {settings && <NewWorld password={password} />}
+    </>
   );
 }

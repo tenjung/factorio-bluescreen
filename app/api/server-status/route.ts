@@ -1,3 +1,4 @@
+import { factorioWorld } from "@/lib/factorio-world";
 import { factorioSettings } from "@/lib/factorio-settings";
 import { timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -8,6 +9,7 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const bridge =
@@ -22,17 +24,24 @@ export async function POST(request: Request) {
   if (!request.headers.get("content-type")?.startsWith("application/json")) {
     return new Response(null, { status: 415 });
   }
-  return handle(request, true);
-}
-
-export async function GET(request: Request) {
   return handle(
     request,
-    new URL(request.url).searchParams.get("view") === "settings",
+    new URL(request.url).searchParams.get("view") === "world"
+      ? "world"
+      : "settings",
   );
 }
 
-async function handle(request: Request, settings: boolean) {
+export async function GET(request: Request) {
+  const view = new URL(request.url).searchParams.get("view");
+  return handle(
+    request,
+    view === "world" || view === "settings" ? view : "status",
+  );
+}
+
+async function handle(request: Request, view: "world" | "settings" | "status") {
+  const settings = view !== "status";
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
   if (settings) {
@@ -59,7 +68,7 @@ async function handle(request: Request, settings: boolean) {
   ) {
     try {
       const url = new URL(process.env.FACTORIO_BRIDGE_URL);
-      if (settings) url.searchParams.set("view", "settings");
+      if (settings) url.searchParams.set("view", view);
       const upstream = await fetch(url, {
         method: request.method,
         body: request.method === "POST" ? await request.text() : undefined,
@@ -75,7 +84,9 @@ async function handle(request: Request, settings: boolean) {
         },
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(settings ? 12000 : 5000),
+        signal: AbortSignal.timeout(
+          view === "world" ? 55000 : settings ? 12000 : 5000,
+        ),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
       return Response.json(await upstream.json(), { headers });
@@ -103,7 +114,12 @@ async function handle(request: Request, settings: boolean) {
     if (settings) {
       const root = process.env.FACTORIO_SERVER_DIR;
       if (!root) throw new Error("Missing dedicated server directory");
-      return Response.json(await factorioSettings(root, request), { headers });
+      return Response.json(
+        await (view === "world"
+          ? factorioWorld(root, request)
+          : factorioSettings(root, request)),
+        { headers },
+      );
     }
     const { stdout } = await run(
       "/bin/ps",
