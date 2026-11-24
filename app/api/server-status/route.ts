@@ -1,3 +1,4 @@
+import { factorioSettings } from "@/lib/factorio-settings";
 import { timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
@@ -8,7 +9,30 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 export const dynamic = "force-dynamic";
 
+export async function POST(request: Request) {
+  const bridge =
+    process.env.VERCEL_ENV !== "preview" && process.env.FACTORIO_BRIDGE_SECRET;
+  if (!bridge) {
+    const origin = request.headers.get("origin");
+    const host = request.headers.get("host");
+    const scheme = process.env.VERCEL_ENV === "preview" ? "https" : "http";
+    if (!host || origin !== `${scheme}://${host}`)
+      return new Response(null, { status: 403 });
+  }
+  if (!request.headers.get("content-type")?.startsWith("application/json")) {
+    return new Response(null, { status: 415 });
+  }
+  return handle(request, true);
+}
+
 export async function GET(request: Request) {
+  return handle(
+    request,
+    new URL(request.url).searchParams.get("view") === "settings",
+  );
+}
+
+async function handle(request: Request, settings: boolean) {
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
   if (
@@ -17,11 +41,18 @@ export async function GET(request: Request) {
     process.env.FACTORIO_BRIDGE_URL
   ) {
     try {
-      const upstream = await fetch(process.env.FACTORIO_BRIDGE_URL, {
-        headers: { Authorization: `Bearer ${secret}` },
+      const url = new URL(process.env.FACTORIO_BRIDGE_URL);
+      if (settings) url.searchParams.set("view", "settings");
+      const upstream = await fetch(url, {
+        method: request.method,
+        body: request.method === "POST" ? await request.text() : undefined,
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(settings ? 12000 : 5000),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
       return Response.json(await upstream.json(), { headers });
@@ -46,6 +77,11 @@ export async function GET(request: Request) {
     return Response.json({ error: "disabled" }, { status: 503, headers });
   }
   try {
+    if (settings) {
+      const root = process.env.FACTORIO_SERVER_DIR;
+      if (!root) throw new Error("Missing dedicated server directory");
+      return Response.json(await factorioSettings(root, request), { headers });
+    }
     const { stdout } = await run(
       "/bin/ps",
       ["-ww", "-axo", "pid=,etime=,%cpu=,rss=,args="],

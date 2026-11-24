@@ -1,5 +1,7 @@
 "use client";
 
+import { ServerSettings } from "@/components/server-settings";
+
 import {
   Clock3,
   Cpu,
@@ -286,17 +288,7 @@ export function LiveStatus({
       {page === "players" && playersCard}
       {page === "logs" && logsCard}
       {page === "saves" && savesCard}
-      {page === "settings" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>서버 설정</CardTitle>
-          </CardHeader>
-          <CardContent>
-            현재는 서버 상태를 조회할 수 있습니다. 설정 변경은 연결 대기
-            중입니다.
-          </CardContent>
-        </Card>
-      )}
+      {page === "settings" && <ServerSettings refreshKey={refreshKey} />}
       {overview && (
         <>
           <section className="server-banner" aria-label="실제 서버 상태">
