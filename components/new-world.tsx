@@ -33,9 +33,38 @@ const axes = [
   ["richness", "매장량"],
 ] as const;
 
+const maxima = { frequency: 5, size: 6, richness: 6 } as const;
+const bulkChoices = [0.5, 1, 1.5, 2, 3, 4, 5, 6];
+
+function isResource(key: string) {
+  return (
+    !key.endsWith("_cliff") &&
+    !["enemy-base", "gleba_enemy_base", "trees", "water"].includes(key)
+  );
+}
+
 export function NewWorld({ password }: { password: string }) {
   const [world, setWorld] = useState<World>();
   const [noCliffs, setNoCliffs] = useState(false);
+  const [bulk, setBulk] = useState<Resource>({ ...maxima });
+
+  function applyResources(values: Partial<Resource>) {
+    setWorld(
+      (current) =>
+        current && {
+          ...current,
+          autoplace_controls: Object.fromEntries(
+            Object.entries(current.autoplace_controls).map(
+              ([key, resource]) => [
+                key,
+                isResource(key) ? { ...resource, ...values } : resource,
+              ],
+            ),
+          ),
+        },
+    );
+  }
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -226,47 +255,75 @@ export function NewWorld({ password }: { password: string }) {
                 )}
               </div>
             </details>
-            <details>
-              <summary className="cursor-pointer font-medium">
-                자원 생성 세부 설정
-              </summary>
-              <div className="my-4 flex flex-wrap items-center gap-3">
+            <section className="rounded-md border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-medium">자원 일괄 조절</h3>
+                  <p className="section-caption">
+                    모든 행성의 자원에 적용됩니다. 아래에서 자원별로 다시 조정할
+                    수 있습니다.
+                  </p>
+                </div>
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() =>
-                    setWorld({
-                      ...world,
-                      autoplace_controls: Object.fromEntries(
-                        Object.entries(world.autoplace_controls).map(
-                          ([key, value]) => [
-                            key,
-                            key.endsWith("_cliff") ||
-                            [
-                              "enemy-base",
-                              "gleba_enemy_base",
-                              "trees",
-                            ].includes(key)
-                              ? value
-                              : { ...value, frequency: 5 },
-                          ],
-                        ),
-                      ),
-                    })
-                  }
+                  onClick={() => {
+                    setBulk({ ...maxima });
+                    applyResources(maxima);
+                    setNoCliffs(true);
+                  }}
                 >
-                  자원 빈도 모두 5배
+                  자원 풍부 · 업적 조건 유지
                 </Button>
-                <span className="text-sm text-muted-foreground">
-                  빈도 0–5배 · 크기와 매장량은 개별 설정
-                </span>
               </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {axes.map(([axis, label]) => (
+                  <div
+                    className="rounded-md border border-border p-3"
+                    key={axis}
+                  >
+                    <Label htmlFor={`bulk-${axis}`}>전체 {label}</Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <select
+                        id={`bulk-${axis}`}
+                        className="log-select"
+                        value={bulk[axis]}
+                        onChange={(event) =>
+                          setBulk({
+                            ...bulk,
+                            [axis]: Number(event.target.value),
+                          })
+                        }
+                      >
+                        {bulkChoices
+                          .filter((value) => value <= maxima[axis])
+                          .map((value) => (
+                            <option key={value} value={value}>
+                              {value}배{value === maxima[axis] ? " (최대)" : ""}
+                            </option>
+                          ))}
+                      </select>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => applyResources({ [axis]: bulk[axis] })}
+                      >
+                        전체 적용
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="section-caption">
+                풍부 설정은 빈도 5배, 크기·매장량 6배, 절벽 꺼짐으로 맞춥니다.
+                적 확장·진화·오염·난이도는 기본값을 사용합니다.
+              </p>
+            </section>
+            <details>
+              <summary className="cursor-pointer font-medium">
+                자원별 세부 설정
+              </summary>
               {Object.entries(world.autoplace_controls)
-                .filter(
-                  ([key]) =>
-                    !key.endsWith("_cliff") &&
-                    !["enemy-base", "gleba_enemy_base", "trees"].includes(key),
-                )
+                .filter(([key]) => isResource(key))
                 .map(([key, resource]) => (
                   <div
                     className="grid grid-cols-3 gap-3 border-b border-border py-3 md:grid-cols-4"
@@ -282,7 +339,7 @@ export function NewWorld({ password }: { password: string }) {
                           type="number"
                           required
                           min={0}
-                          max={axis === "frequency" ? 5 : 6}
+                          max={maxima[axis]}
                           step="any"
                           value={
                             Number.isNaN(resource[axis]) ? "" : resource[axis]
