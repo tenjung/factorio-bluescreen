@@ -50,56 +50,39 @@ export function LiveStatus({
   const [checked, setChecked] = useState(false);
   const [status, setStatus] = useState<Status>();
   useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const controller = new AbortController();
-    let etag: string | null = null;
-
-    async function refresh() {
-      try {
-        if (document.hidden) return;
-        const response = await fetch("/api/server-status", {
-          cache: "no-store",
-          headers: etag ? { "If-None-Match": etag } : undefined,
-          signal: AbortSignal.any([
-            controller.signal,
-            AbortSignal.timeout(4000),
-          ]),
-        });
-        if (response.status === 304) return;
-        if (!response.ok) throw new Error("Status unavailable");
-        const result: Status = await response.json();
-        etag = response.headers.get("etag");
-        if (!stopped) {
-          setStatus(result);
-          setHistory((previous) =>
-            [
-              ...previous.filter(
-                (item) =>
-                  Date.parse(result.checkedAt) - Date.parse(item.checkedAt) <=
-                  600_000,
-              ),
-              result,
-            ].slice(-120),
-          );
-        }
-      } catch {
-        etag = null;
-        if (!stopped) setStatus(undefined);
-      } finally {
-        if (!stopped) {
-          setChecked(true);
-          timer = setTimeout(refresh, publicView ? 30000 : 15000);
-        }
+    let stream: EventSource | undefined;
+    function syncVisibility() {
+      if (document.hidden) {
+        stream?.close();
+        stream = undefined;
+        return;
       }
+      if (stream) return;
+      stream = new EventSource("/api/server-status?stream=1");
+      stream.onmessage = ({ data }) => {
+        const result: Status = JSON.parse(data);
+        setChecked(true);
+        setStatus(result);
+        setHistory((previous) =>
+          [
+            ...previous.filter(
+              (item) =>
+                Date.parse(result.checkedAt) - Date.parse(item.checkedAt) <=
+                  600_000 && item.checkedAt !== result.checkedAt,
+            ),
+            result,
+          ].slice(-120),
+        );
+      };
+      stream.onerror = () => setChecked(true);
     }
-    void refresh();
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
     return () => {
-      stopped = true;
-      controller.abort();
-      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", syncVisibility);
+      stream?.close();
     };
-  }, [publicView, refreshKey]);
+  }, [refreshKey]);
 
   const overview = page === "overview";
   const recentSave = status?.saves?.[0];

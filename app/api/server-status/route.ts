@@ -1,5 +1,6 @@
 import {
   chatStreamHeaders,
+  createFactorioLogStream,
   factorioChatStream,
 } from "@/lib/factorio-chat-stream";
 import { factorioAddresses } from "@/lib/factorio-addresses";
@@ -85,8 +86,8 @@ async function handle(
     | "addresses",
 ) {
   const settings = view !== "status";
-  const chatStream =
-    view === "chat" &&
+  const stream =
+    (view === "chat" || view === "status") &&
     request.method === "GET" &&
     new URL(request.url).searchParams.get("stream") === "1";
   const publicView = process.env.VERCEL_ENV === "production";
@@ -119,7 +120,7 @@ async function handle(
     try {
       const url = new URL(process.env.FACTORIO_BRIDGE_URL);
       if (settings) url.searchParams.set("view", view);
-      if (chatStream) url.searchParams.set("stream", "1");
+      if (stream) url.searchParams.set("stream", "1");
       const upstream = await fetch(url, {
         method: request.method,
         body: request.method === "POST" ? await request.text() : undefined,
@@ -131,11 +132,14 @@ async function handle(
                   request.headers.get("x-settings-password") ?? "",
               }
             : {}),
+          ...(stream && request.headers.get("last-event-id")
+            ? { "Last-Event-ID": request.headers.get("last-event-id")! }
+            : {}),
           "Content-Type": "application/json",
         },
         cache: "no-store",
         redirect: "error",
-        signal: chatStream
+        signal: stream
           ? AbortSignal.any([request.signal, AbortSignal.timeout(50000)])
           : AbortSignal.timeout(
               view === "world" || view === "switch-world" || view === "control"
@@ -146,7 +150,7 @@ async function handle(
             ),
       });
       if (!upstream.ok) throw new Error("Bridge unavailable");
-      if (chatStream) {
+      if (stream) {
         if (
           !upstream.headers.get("content-type")?.startsWith("text/event-stream")
         )
@@ -214,7 +218,7 @@ async function handle(
       if (view === "addresses")
         return Response.json(await factorioAddresses(), { headers });
       if (view === "chat") {
-        if (chatStream) return factorioChatStream(request);
+        if (stream) return factorioChatStream(request);
         if (request.method === "GET") {
           const { stdout } = await run(
             "/usr/bin/tail",
@@ -282,89 +286,125 @@ async function handle(
         { headers },
       );
     }
-    const { stdout } = await run(
-      "/bin/ps",
-      ["-ww", "-axo", "pid=,etime=,%cpu=,rss=,args="],
-      { timeout: 3000 },
-    );
-    const processes = stdout
-      .split("\n")
-      .filter(
-        (line) =>
-          /^\s*\d+\s+\S+\s+[\d.]+\s+\d+\s+.*\/Contents\/MacOS\/factorio\s+/.test(
-            line,
-          ) && /\s--start-server(?:-load-latest)?(?:\s|$)/.test(line),
-      );
-    if (processes.length > 1) throw new Error("Multiple dedicated servers");
-    const row = processes[0]?.trim().split(/\s+/, 5);
-    const root = process.env.FACTORIO_SERVER_DIR;
-    if (!root) throw new Error("Missing dedicated server directory");
-    const [playerOutput, logOutput, entries] = await Promise.allSettled([
-      row
-        ? run(join(root, "rcon.sh"), ["/players online"], { timeout: 3000 })
-        : Promise.resolve(null),
-      run(
-        "/usr/bin/tail",
-        ["-n", "300", join(homedir(), "Library/Logs/factorio-server.log")],
-        { timeout: 3000 },
-      ),
-      readdir(join(root, "data/saves"), { withFileTypes: true }),
+    if (stream) return factorioStatusStream(request);
+    const snapshot = await readFactorioStatus();
+    return statusResponse(request, snapshot, [
+      snapshot.running,
+      snapshot.players,
+      snapshot.logs,
     ]);
-    const playerText =
-      playerOutput.status === "fulfilled"
-        ? playerOutput.value?.stdout
-        : undefined;
-    const players = !row
-      ? []
-      : playerText?.includes("Online players (")
-        ? Array.from(
-            playerText.matchAll(/^ +(.+) \(online\)$/gm),
-            ([, name]) => name,
-          )
-        : null;
-    const logs =
-      logOutput.status === "fulfilled"
-        ? logOutput.value.stdout
-            .split("\n")
-            .filter(
-              (line) =>
-                /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|Changing state/.test(
-                  line,
-                ) &&
-                !/\[CHAT\]|https?:|password|token|(?:\d{1,3}\.){3}\d{1,3}/i.test(
-                  line,
-                ),
-            )
-            .slice(-50)
-        : null;
-    const saves =
-      entries.status === "fulfilled"
-        ? await Promise.all(
-            entries.value
-              .filter((entry) => entry.isFile() && entry.name.endsWith(".zip"))
-              .map(async ({ name }) => {
-                const file = await stat(join(root, "data/saves", name));
-                return {
-                  name,
-                  size: file.size,
-                  modified: file.mtime.toISOString(),
-                };
-              }),
-          ).catch(() => null)
-        : null;
-    saves?.sort((a, b) => b.modified.localeCompare(a.modified));
-    const snapshot = {
-      players,
-      logs,
-      saves,
-      running: Boolean(row),
-      uptime: row?.[1] ?? null,
-      cpu: row ? Number(row[2]) : null,
-      memoryMiB: row ? Math.round(Number(row[3]) / 1024) : null,
-      checkedAt: new Date().toISOString(),
-    };
-    return statusResponse(request, snapshot, [snapshot.running, players, logs]);
   } catch {
     return Response.json({ error: "unavailable" }, { status: 503, headers });
   }
 }
+
+async function readFactorioStatus() {
+  const { stdout } = await run(
+    "/bin/ps",
+    ["-ww", "-axo", "pid=,etime=,%cpu=,rss=,args="],
+    { timeout: 3000 },
+  );
+  const processes = stdout
+    .split("\n")
+    .filter(
+      (line) =>
+        /^\s*\d+\s+\S+\s+[\d.]+\s+\d+\s+.*\/Contents\/MacOS\/factorio\s+/.test(
+          line,
+        ) && /\s--start-server(?:-load-latest)?(?:\s|$)/.test(line),
+    );
+  if (processes.length > 1) throw new Error("Multiple dedicated servers");
+  const row = processes[0]?.trim().split(/\s+/, 5);
+  const root = process.env.FACTORIO_SERVER_DIR;
+  if (!root) throw new Error("Missing dedicated server directory");
+  const [playerOutput, logOutput, entries] = await Promise.allSettled([
+    row
+      ? run(join(root, "rcon.sh"), ["/players online"], { timeout: 3000 })
+      : Promise.resolve(null),
+    run(
+      "/usr/bin/tail",
+      ["-n", "300", join(homedir(), "Library/Logs/factorio-server.log")],
+      { timeout: 3000 },
+    ),
+    readdir(join(root, "data/saves"), { withFileTypes: true }),
+  ]);
+  const playerText =
+    playerOutput.status === "fulfilled"
+      ? playerOutput.value?.stdout
+      : undefined;
+  const players = !row
+    ? []
+    : playerText?.includes("Online players (")
+      ? Array.from(
+          playerText.matchAll(/^ +(.+) \(online\)$/gm),
+          ([, name]) => name,
+        )
+      : null;
+  const logs =
+    logOutput.status === "fulfilled"
+      ? logOutput.value.stdout
+          .split("\n")
+          .filter(
+            (line) =>
+              /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|Changing state/.test(
+                line,
+              ) &&
+              !/\[CHAT\]|https?:|password|token|(?:\d{1,3}\.){3}\d{1,3}/i.test(
+                line,
+              ),
+          )
+          .slice(-50)
+      : null;
+  const saves =
+    entries.status === "fulfilled"
+      ? await Promise.all(
+          entries.value
+            .filter((entry) => entry.isFile() && entry.name.endsWith(".zip"))
+            .map(async ({ name }) => {
+              const file = await stat(join(root, "data/saves", name));
+              return {
+                name,
+                size: file.size,
+                modified: file.mtime.toISOString(),
+              };
+            }),
+        ).catch(() => null)
+      : null;
+  saves?.sort((a, b) => b.modified.localeCompare(a.modified));
+  const snapshot = {
+    players,
+    logs,
+    saves,
+    running: Boolean(row),
+    uptime: row?.[1] ?? null,
+    cpu: row ? Number(row[2]) : null,
+    memoryMiB: row ? Math.round(Number(row[3]) / 1024) : null,
+    checkedAt: new Date().toISOString(),
+  };
+  return snapshot;
+}
+
+const factorioStatusStream = createFactorioLogStream(
+  (lines) =>
+    lines
+      .filter(
+        (line) =>
+          !line.includes("[CHAT]") &&
+          /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|changing state|Starting RCON interface|Goodbye/i.test(
+            line,
+          ),
+      )
+      .slice(-50),
+  async () => {
+    const snapshot = await readFactorioStatus();
+    return {
+      ...snapshot,
+      logs:
+        snapshot.logs?.map((line) =>
+          line.replace(
+            /\/(?:Volumes|Users)\/[^\r\n]*\.zip/g,
+            (path) => path.split("/").at(-1) ?? "",
+          ),
+        ) ?? null,
+    };
+  },
+);
