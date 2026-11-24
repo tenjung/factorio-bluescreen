@@ -64,7 +64,7 @@ async function handle(
   const settings = view !== "status";
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.FACTORIO_BRIDGE_SECRET?.trim();
-  if (settings) {
+  if (settings && view !== "chat") {
     const password = process.env.FACTORIO_SETTINGS_PASSWORD?.trim();
     const supplied = Buffer.from(
       request.headers.get("x-settings-password") ?? "",
