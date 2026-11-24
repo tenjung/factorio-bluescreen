@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -19,11 +19,57 @@ const relativeBin =
   "steamapps/common/Factorio/factorio.app/Contents/MacOS/factorio";
 let generating = false;
 
+async function findBinary() {
+  const candidates = [
+    process.env.FACTORIO_BIN,
+    ...[
+      "/Volumes/External2TB/SteamLibrary",
+      "/Volumes/data/SteamLibrary",
+      join(homedir(), "Library/Application Support/Steam"),
+    ].map((path) => join(path, relativeBin)),
+  ];
+  const checks = await Promise.all(
+    candidates.map(
+      async (path) =>
+        path &&
+        (await access(path, constants.X_OK).then(
+          () => path,
+          () => undefined,
+        )),
+    ),
+  );
+  const bin = checks.find(Boolean);
+  if (!bin) throw new Error("Factorio binary unavailable");
+  return bin;
+}
+
 export async function factorioWorld(root: string, request: Request) {
   const base = JSON.parse(
     await readFile(join(root, "map-gen-settings.json"), "utf8"),
   );
-  if (request.method === "GET") return base;
+  const bin = await findBinary();
+  const installed = JSON.parse(
+    await readFile(
+      join(dirname(bin), "../data/map-settings.example.json"),
+      "utf8",
+    ),
+  );
+  const protectedDefaults = Object.fromEntries(
+    [
+      "enemy_expansion",
+      "enemy_evolution",
+      "pollution",
+      "difficulty_settings",
+    ].map((key) => [key, installed[key]]),
+  );
+  if (request.method === "GET") {
+    return {
+      ...base,
+      starting_area: Math.min(base.starting_area ?? 1, 1),
+      peaceful_mode: false,
+      protectedDefaults,
+    };
+  }
 
   const input = await request.json();
   if (generating) throw new Error("Map generation already running");
@@ -43,17 +89,20 @@ export async function factorioWorld(root: string, request: Request) {
     !integer(input.width, 0, 2000000) ||
     !integer(input.height, 0, 2000000) ||
     !multiplier(input.starting_area) ||
-    typeof input.peaceful_mode !== "boolean" ||
+    input.starting_area > 1 ||
+    input.peaceful_mode !== false ||
     !input.autoplace_controls ||
     typeof input.autoplace_controls !== "object"
   ) {
     throw new Error("Invalid world settings");
   }
   for (const key of Object.keys(base.autoplace_controls)) {
+    if (["enemy-base", "gleba_enemy_base", "trees"].includes(key)) continue;
     const values = input.autoplace_controls[key];
     if (
       !values ||
-      ![values.frequency, values.size, values.richness].every(multiplier)
+      ![values.frequency, values.size, values.richness].every(multiplier) ||
+      values.frequency > 5
     )
       throw new Error("Invalid resource settings");
     base.autoplace_controls[key] = {
@@ -62,6 +111,9 @@ export async function factorioWorld(root: string, request: Request) {
       richness: values.richness,
     };
   }
+  for (const key of ["enemy-base", "gleba_enemy_base", "trees"])
+    delete base.autoplace_controls[key];
+  delete base.no_enemies_mode;
   Object.assign(base, {
     seed: input.seed,
     width: input.width,
@@ -97,26 +149,6 @@ export async function factorioWorld(root: string, request: Request) {
       `[path]\nread-data=__PATH__system-read-data__\nwrite-data=${room}\n\n[other]\ncheck-updates=false\n`,
     );
     await writeFile(generation, JSON.stringify(base, null, 2));
-    const candidates = [
-      process.env.FACTORIO_BIN,
-      ...[
-        "/Volumes/External2TB/SteamLibrary",
-        "/Volumes/data/SteamLibrary",
-        join(homedir(), "Library/Application Support/Steam"),
-      ].map((path) => join(path, relativeBin)),
-    ];
-    const checks = await Promise.all(
-      candidates.map(
-        async (path) =>
-          path &&
-          (await access(path, constants.X_OK).then(
-            () => path,
-            () => undefined,
-          )),
-      ),
-    );
-    const bin = checks.find(Boolean);
-    if (!bin) throw new Error("Factorio binary unavailable");
     await run(
       bin,
       [
