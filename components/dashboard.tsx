@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatus } from "@/components/live-status";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -206,7 +207,7 @@ function PerformanceChart({ metric }: { metric: string }) {
   );
 }
 
-export function Dashboard() {
+export function Dashboard({ live = false }: { live?: boolean }) {
   const [page, setPage] = useState("overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [metric, setMetric] = useState("CPU");
@@ -294,7 +295,7 @@ export function Dashboard() {
             >
               <Icon size={18} />
               <span>{label}</span>
-              {id === "players" ? (
+              {id === "players" && !live ? (
                 <span className="nav-count">{running ? 3 : 0}</span>
               ) : null}
               {id === page ? <span className="active-line" /> : null}
@@ -327,7 +328,7 @@ export function Dashboard() {
         <div className="sidebar-bottom">
           <div className="agent-state">
             <span className="status-dot amber" />
-            <span>에이전트 연결 대기</span>
+            <span>{live ? "실시간 조회 모드" : "에이전트 연결 대기"}</span>
             <ChevronRight size={14} />
           </div>
           <div className="account">
@@ -365,7 +366,8 @@ export function Dashboard() {
           </div>
           <div className="topbar-right">
             <span className="preview-label">
-              <span className="status-dot amber" /> UI 미리보기
+              <span className="status-dot amber" />{" "}
+              {live ? "실시간 조회" : "UI 미리보기"}
             </span>
             <a
               href="https://github.com/tenjung/factorio-bluescreen"
@@ -410,271 +412,463 @@ export function Dashboard() {
               새로고침
             </Button>
           </div>
-          <div className="demo-banner">
-            <div>
-              <Radio size={16} />
-              <span>
-                <strong>미리보기 모드</strong>
-                <span className="banner-detail">
-                  {" "}
-                  · 아래 수치와 로그는 예시입니다. 실제 서버는 아직 연결되지
-                  않았습니다.
-                </span>
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                navigate("settings");
-                setNotice(
-                  "다음 단계에서 Mac 관리 에이전트와 인증된 연결을 구성합니다.",
-                );
-              }}
-            >
-              연결 안내 <ArrowUpRight size={14} />
-            </button>
-          </div>
-          {notice ? (
-            <div className="notice" role="status">
-              <Check size={16} />
-              <span>{notice}</span>
-              <button aria-label="알림 닫기" onClick={() => setNotice("")}>
-                <X size={16} />
-              </button>
-            </div>
-          ) : null}
-          {page === "overview" ? (
+          {live ? (
+            <LiveStatus page={page} />
+          ) : (
             <>
-              <section className="server-banner">
-                <div className="server-identity">
-                  <div className="server-icon">
-                    <Factory size={29} />
-                  </div>
-                  <div>
-                    <div className="server-title">
-                      <h2>{serverName}</h2>
-                      <Badge
-                        className={running ? "badge-green" : "badge-muted"}
-                      >
-                        <span
-                          className={cn("status-dot", !running && "gray")}
-                        />
-                        {running ? "실행 중" : "중지됨"} · 예시
-                      </Badge>
+              <div className="demo-banner">
+                <div>
+                  <Radio size={16} />
+                  <span>
+                    <strong>미리보기 모드</strong>
+                    <span className="banner-detail">
+                      {" "}
+                      · 아래 수치와 로그는 예시입니다. 실제 서버는 아직 연결되지
+                      않았습니다.
+                    </span>
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    navigate("settings");
+                    setNotice(
+                      "다음 단계에서 Mac 관리 에이전트와 인증된 연결을 구성합니다.",
+                    );
+                  }}
+                >
+                  연결 안내 <ArrowUpRight size={14} />
+                </button>
+              </div>
+              {notice ? (
+                <div className="notice" role="status">
+                  <Check size={16} />
+                  <span>{notice}</span>
+                  <button aria-label="알림 닫기" onClick={() => setNotice("")}>
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : null}
+              {page === "overview" ? (
+                <>
+                  <section className="server-banner">
+                    <div className="server-identity">
+                      <div className="server-icon">
+                        <Factory size={29} />
+                      </div>
+                      <div>
+                        <div className="server-title">
+                          <h2>{serverName}</h2>
+                          <Badge
+                            className={running ? "badge-green" : "badge-muted"}
+                          >
+                            <span
+                              className={cn("status-dot", !running && "gray")}
+                            />
+                            {running ? "실행 중" : "중지됨"} · 예시
+                          </Badge>
+                        </div>
+                        <p>
+                          <span>전용 서버</span>
+                          <span className="metadata-divider" />
+                          Factorio 2.0 <span className="metadata-divider" />
+                          Mac mini
+                        </p>
+                      </div>
                     </div>
-                    <p>
-                      <span>전용 서버</span>
-                      <span className="metadata-divider" />
-                      Factorio 2.0 <span className="metadata-divider" />
-                      Mac mini
-                    </p>
+                    <div className="server-actions">
+                      <Button
+                        variant="outline"
+                        onClick={() => setAction("저장")}
+                        disabled={!running}
+                      >
+                        <Save size={15} />
+                        저장
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setAction(running ? "재시작" : "시작")}
+                      >
+                        {running ? <RefreshCw size={15} /> : <Play size={15} />}
+                        {running ? "재시작" : "시작"}
+                      </Button>
+                      <Button
+                        className="stop-button"
+                        variant="outline"
+                        onClick={() => setAction("종료")}
+                        disabled={!running}
+                      >
+                        <Power size={15} />
+                        종료
+                      </Button>
+                    </div>
+                  </section>
+                  <div className="stats-grid">
+                    {[
+                      {
+                        icon: Users,
+                        label: "접속 플레이어",
+                        value: running ? "3" : "0",
+                        suffix: `/ ${maxPlayers}`,
+                        foot: running ? "함께 공장을 만드는 중" : "서버 중지됨",
+                        accent: true,
+                      },
+                      {
+                        icon: Clock3,
+                        label: "서버 가동 시간",
+                        value: running ? "12" : "0",
+                        suffix: running ? "시간 34분" : "시간",
+                        foot: "마지막 시작 · 오늘 08:46",
+                      },
+                      {
+                        icon: Cpu,
+                        label: "CPU 사용량",
+                        value: running ? "24.8" : "0",
+                        suffix: "%",
+                        foot: running ? "안정적인 상태" : "서버 중지됨",
+                        progress: running ? 25 : 0,
+                      },
+                      {
+                        icon: Database,
+                        label: "메모리 사용량",
+                        value: running ? "2.4" : "0",
+                        suffix: "/ 8 GB",
+                        foot: running ? "전체 메모리의 30%" : "서버 중지됨",
+                        progress: running ? 30 : 0,
+                      },
+                    ].map(
+                      ({
+                        icon: Icon,
+                        label,
+                        value,
+                        suffix,
+                        foot,
+                        progress,
+                        accent,
+                      }) => (
+                        <Card key={label} className="stat-card">
+                          <CardContent>
+                            <div className="stat-label">
+                              {label}
+                              <Icon size={17} />
+                            </div>
+                            <div className="stat-value">
+                              {value}
+                              <span>{suffix}</span>
+                            </div>
+                            {progress ? (
+                              <div className="stat-progress">
+                                <span style={{ width: `${progress}%` }} />
+                              </div>
+                            ) : null}
+                            <div
+                              className={cn(
+                                "stat-foot",
+                                accent && "green-text",
+                              )}
+                            >
+                              {accent ? <span className="status-dot" /> : null}
+                              {foot}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ),
+                    )}
                   </div>
-                </div>
-                <div className="server-actions">
-                  <Button
-                    variant="outline"
-                    onClick={() => setAction("저장")}
-                    disabled={!running}
-                  >
-                    <Save size={15} />
-                    저장
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setAction(running ? "재시작" : "시작")}
-                  >
-                    {running ? <RefreshCw size={15} /> : <Play size={15} />}
-                    {running ? "재시작" : "시작"}
-                  </Button>
-                  <Button
-                    className="stop-button"
-                    variant="outline"
-                    onClick={() => setAction("종료")}
-                    disabled={!running}
-                  >
-                    <Power size={15} />
-                    종료
-                  </Button>
-                </div>
-              </section>
-              <div className="stats-grid">
-                {[
-                  {
-                    icon: Users,
-                    label: "접속 플레이어",
-                    value: running ? "3" : "0",
-                    suffix: `/ ${maxPlayers}`,
-                    foot: running ? "함께 공장을 만드는 중" : "서버 중지됨",
-                    accent: true,
-                  },
-                  {
-                    icon: Clock3,
-                    label: "서버 가동 시간",
-                    value: running ? "12" : "0",
-                    suffix: running ? "시간 34분" : "시간",
-                    foot: "마지막 시작 · 오늘 08:46",
-                  },
-                  {
-                    icon: Cpu,
-                    label: "CPU 사용량",
-                    value: running ? "24.8" : "0",
-                    suffix: "%",
-                    foot: running ? "안정적인 상태" : "서버 중지됨",
-                    progress: running ? 25 : 0,
-                  },
-                  {
-                    icon: Database,
-                    label: "메모리 사용량",
-                    value: running ? "2.4" : "0",
-                    suffix: "/ 8 GB",
-                    foot: running ? "전체 메모리의 30%" : "서버 중지됨",
-                    progress: running ? 30 : 0,
-                  },
-                ].map(
-                  ({
-                    icon: Icon,
-                    label,
-                    value,
-                    suffix,
-                    foot,
-                    progress,
-                    accent,
-                  }) => (
-                    <Card key={label} className="stat-card">
+                  <div className="middle-grid">
+                    <Card className="performance-card">
+                      <CardHeader>
+                        <div>
+                          <CardTitle>서버 리소스</CardTitle>
+                          <p className="section-caption">
+                            최근 1시간의 리소스 사용 추이 · 예시
+                          </p>
+                        </div>
+                        <Tabs value={metric} onValueChange={setMetric}>
+                          <TabsList>
+                            <TabsTrigger value="CPU">CPU</TabsTrigger>
+                            <TabsTrigger value="메모리">메모리</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </CardHeader>
                       <CardContent>
-                        <div className="stat-label">
-                          {label}
-                          <Icon size={17} />
+                        <div className="chart-summary">
+                          <strong>
+                            {metric === "CPU" ? "24.8" : "2.4"}
+                            <span>{metric === "CPU" ? "%" : "GB"}</span>
+                          </strong>
+                          <span>
+                            <span className="legend-dot" />
+                            {metric} 사용량
+                          </span>
+                          <Badge variant="outline">최근 1시간</Badge>
                         </div>
-                        <div className="stat-value">
-                          {value}
-                          <span>{suffix}</span>
-                        </div>
-                        {progress ? (
-                          <div className="stat-progress">
-                            <span style={{ width: `${progress}%` }} />
-                          </div>
-                        ) : null}
-                        <div
-                          className={cn("stat-foot", accent && "green-text")}
-                        >
-                          {accent ? <span className="status-dot" /> : null}
-                          {foot}
+                        <PerformanceChart metric={metric} />
+                        <div className="chart-footer">
+                          <span>
+                            <Activity size={13} />
+                            안정적으로 운영되고 있습니다
+                          </span>
+                          <span>예시 데이터</span>
                         </div>
                       </CardContent>
                     </Card>
-                  ),
-                )}
-              </div>
-              <div className="middle-grid">
-                <Card className="performance-card">
-                  <CardHeader>
-                    <div>
-                      <CardTitle>서버 리소스</CardTitle>
-                      <p className="section-caption">
-                        최근 1시간의 리소스 사용 추이 · 예시
-                      </p>
-                    </div>
-                    <Tabs value={metric} onValueChange={setMetric}>
-                      <TabsList>
-                        <TabsTrigger value="CPU">CPU</TabsTrigger>
-                        <TabsTrigger value="메모리">메모리</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="chart-summary">
-                      <strong>
-                        {metric === "CPU" ? "24.8" : "2.4"}
-                        <span>{metric === "CPU" ? "%" : "GB"}</span>
-                      </strong>
-                      <span>
-                        <span className="legend-dot" />
-                        {metric} 사용량
-                      </span>
-                      <Badge variant="outline">최근 1시간</Badge>
-                    </div>
-                    <PerformanceChart metric={metric} />
-                    <div className="chart-footer">
-                      <span>
-                        <Activity size={13} />
-                        안정적으로 운영되고 있습니다
-                      </span>
-                      <span>예시 데이터</span>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="players-card">
+                    <Card className="players-card">
+                      <CardHeader>
+                        <CardTitle>
+                          접속 플레이어{" "}
+                          <span className="count-label">{running ? 3 : 0}</span>
+                        </CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="플레이어 목록 보기"
+                          onClick={() => navigate("players")}
+                        >
+                          <MoreHorizontal size={18} />
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        {running ? (
+                          players.map((p) => (
+                            <div className="player-row" key={p.name}>
+                              <div
+                                className="player-avatar"
+                                style={{
+                                  background: `${p.color}18`,
+                                  color: p.color,
+                                }}
+                              >
+                                {p.initials}
+                                <span className="status-dot" />
+                              </div>
+                              <div className="player-info">
+                                <strong>{p.name}</strong>
+                                <span>
+                                  {p.role} · {p.time}
+                                </span>
+                              </div>
+                              <span className="player-ping">
+                                <span />
+                                {p.ping}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="empty-state">
+                            서버가 중지되어 있습니다. (미리보기)
+                          </div>
+                        )}
+                        <button
+                          className="text-link full"
+                          onClick={() => navigate("players")}
+                        >
+                          플레이어 관리 <ChevronRight size={14} />
+                        </button>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  <div className="bottom-grid">
+                    <Card className="logs-card">
+                      <CardHeader>
+                        <CardTitle>
+                          <Terminal size={17} />
+                          서버 로그<Badge variant="outline">예시</Badge>
+                        </CardTitle>
+                        <button
+                          className="text-link"
+                          onClick={() => navigate("logs")}
+                        >
+                          전체 보기 <ArrowUpRight size={13} />
+                        </button>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="terminal-lines">
+                          {logs.slice(-6).map((l, i) => (
+                            <div className="log-line" key={i}>
+                              <time>{l.time}</time>
+                              <span
+                                className={cn(
+                                  "log-level",
+                                  l.level.toLowerCase(),
+                                )}
+                              >
+                                {l.level}
+                              </span>
+                              <span>{l.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="terminal-bottom">
+                          <span className="terminal-cursor" />
+                          실시간 로그 연결 대기
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="save-card">
+                      <CardHeader>
+                        <CardTitle>최근 세이브</CardTitle>
+                        <HardDrive size={17} />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="save-file">
+                          <div className="file-icon">
+                            <FileText size={25} />
+                          </div>
+                          <div>
+                            <strong>_autosave2.zip</strong>
+                            <span>오늘 21:15 · 128.4 MB</span>
+                          </div>
+                        </div>
+                        <div className="save-success">
+                          <ShieldCheck size={14} />
+                          자동 저장 완료 · 예시
+                        </div>
+                        <div className="save-meta">
+                          <span>저장 주기</span>
+                          <strong>15분마다</strong>
+                        </div>
+                        <div className="save-meta">
+                          <span>보관 파일</span>
+                          <strong>최근 3개</strong>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => navigate("saves")}
+                        >
+                          <Database size={14} />
+                          세이브 관리
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : null}
+              {page === "players" ? (
+                <Card>
                   <CardHeader>
                     <CardTitle>
-                      접속 플레이어{" "}
-                      <span className="count-label">{running ? 3 : 0}</span>
+                      플레이어 목록 <Badge variant="outline">예시</Badge>
                     </CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="플레이어 목록 보기"
-                      onClick={() => navigate("players")}
-                    >
-                      <MoreHorizontal size={18} />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="search-field">
+                      <Search size={16} />
+                      <Input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="플레이어 검색"
+                        aria-label="플레이어 검색"
+                      />
+                    </div>
+                    {running ? (
+                      players
+                        .filter((p) =>
+                          p.name.toLowerCase().includes(query.toLowerCase()),
+                        )
+                        .map((p) => (
+                          <div key={p.name} className="player-row">
+                            <div
+                              className="player-avatar"
+                              style={{
+                                color: p.color,
+                                background: `${p.color}18`,
+                              }}
+                            >
+                              {p.initials}
+                            </div>
+                            <div className="player-info">
+                              <strong>{p.name}</strong>
+                              <span>
+                                {p.role} · 접속 {p.time}
+                              </span>
+                            </div>
+                            <Badge variant="outline">{p.ping}</Badge>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="empty-state">
+                        접속 중인 플레이어가 없습니다.
+                      </p>
+                    )}
+                    {running &&
+                    !players.some((p) =>
+                      p.name.toLowerCase().includes(query.toLowerCase()),
+                    ) ? (
+                      <p className="empty-state">검색 결과가 없습니다.</p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
+              {page === "saves" ? (
+                <Card>
+                  <CardHeader>
+                    <div>
+                      <CardTitle>저장 파일</CardTitle>
+                      <p className="section-caption">
+                        실제 파일 관리는 에이전트 연결 후 제공됩니다.
+                      </p>
+                    </div>
+                    <Button onClick={() => setAction("저장")}>
+                      <Save size={15} />
+                      수동 저장 미리보기
                     </Button>
                   </CardHeader>
                   <CardContent>
-                    {running ? (
-                      players.map((p) => (
-                        <div className="player-row" key={p.name}>
-                          <div
-                            className="player-avatar"
-                            style={{
-                              background: `${p.color}18`,
-                              color: p.color,
-                            }}
-                          >
-                            {p.initials}
-                            <span className="status-dot" />
-                          </div>
-                          <div className="player-info">
-                            <strong>{p.name}</strong>
-                            <span>
-                              {p.role} · {p.time}
-                            </span>
-                          </div>
-                          <span className="player-ping">
-                            <span />
-                            {p.ping}
+                    {saves.map((s) => (
+                      <div className="save-list-row" key={s.name}>
+                        <div className="file-icon">
+                          <FileText size={22} />
+                        </div>
+                        <div className="save-list-info">
+                          <strong>{s.name}</strong>
+                          <span>
+                            {s.kind} · {s.date} · {s.size}
                           </span>
                         </div>
-                      ))
-                    ) : (
-                      <div className="empty-state">
-                        서버가 중지되어 있습니다. (미리보기)
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          aria-label={`${s.name} 다운로드 안내`}
+                          onClick={() => downloadSave(s.name)}
+                        >
+                          <Download size={16} />
+                        </Button>
                       </div>
-                    )}
-                    <button
-                      className="text-link full"
-                      onClick={() => navigate("players")}
-                    >
-                      플레이어 관리 <ChevronRight size={14} />
-                    </button>
+                    ))}
                   </CardContent>
                 </Card>
-              </div>
-              <div className="bottom-grid">
+              ) : null}
+              {page === "logs" ? (
                 <Card className="logs-card">
                   <CardHeader>
                     <CardTitle>
                       <Terminal size={17} />
-                      서버 로그<Badge variant="outline">예시</Badge>
+                      서버 로그
                     </CardTitle>
-                    <button
-                      className="text-link"
-                      onClick={() => navigate("logs")}
+                    <select
+                      className="log-select"
+                      aria-label="로그 유형 필터"
+                      value={logFilter}
+                      onChange={(e) => setLogFilter(e.target.value)}
                     >
-                      전체 보기 <ArrowUpRight size={13} />
-                    </button>
+                      {["ALL", "INFO", "JOIN", "SAVE"].map((f) => (
+                        <option key={f}>{f}</option>
+                      ))}
+                    </select>
                   </CardHeader>
                   <CardContent>
-                    <div className="terminal-lines">
-                      {logs.slice(-6).map((l, i) => (
+                    <div className="search-field">
+                      <Search size={16} />
+                      <Input
+                        placeholder="로그 내용 검색"
+                        aria-label="로그 내용 검색"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                    </div>
+                    <div className="terminal-lines expanded">
+                      {filteredLogs.map((l, i) => (
                         <div className="log-line" key={i}>
                           <time>{l.time}</time>
                           <span
@@ -685,297 +879,126 @@ export function Dashboard() {
                           <span>{l.text}</span>
                         </div>
                       ))}
-                    </div>
-                    <div className="terminal-bottom">
-                      <span className="terminal-cursor" />
-                      실시간 로그 연결 대기
+                      {!filteredLogs.length ? (
+                        <p className="empty-state">
+                          조건에 맞는 로그가 없습니다.
+                        </p>
+                      ) : null}
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="save-card">
-                  <CardHeader>
-                    <CardTitle>최근 세이브</CardTitle>
-                    <HardDrive size={17} />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="save-file">
-                      <div className="file-icon">
-                        <FileText size={25} />
-                      </div>
+              ) : null}
+              {page === "settings" ? (
+                <div className="settings-grid">
+                  <Card>
+                    <CardHeader>
                       <div>
-                        <strong>_autosave2.zip</strong>
-                        <span>오늘 21:15 · 128.4 MB</span>
+                        <CardTitle>기본 설정</CardTitle>
+                        <p className="section-caption">
+                          이 화면의 변경 사항은 미리보기에만 적용됩니다.
+                        </p>
                       </div>
-                    </div>
-                    <div className="save-success">
-                      <ShieldCheck size={14} />
-                      자동 저장 완료 · 예시
-                    </div>
-                    <div className="save-meta">
-                      <span>저장 주기</span>
-                      <strong>15분마다</strong>
-                    </div>
-                    <div className="save-meta">
-                      <span>보관 파일</span>
-                      <strong>최근 3개</strong>
-                    </div>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => navigate("saves")}
-                    >
-                      <Database size={14} />
-                      세이브 관리
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
+                    </CardHeader>
+                    <CardContent>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          setNotice(
+                            "설정이 미리보기에 적용되었습니다. 실제 서버에는 저장되지 않았습니다.",
+                          );
+                        }}
+                        className="settings-form"
+                      >
+                        <div>
+                          <Label htmlFor="server-name">서버 이름</Label>
+                          <Input
+                            id="server-name"
+                            required
+                            maxLength={80}
+                            value={serverName}
+                            onChange={(e) => setServerName(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="description">서버 설명</Label>
+                          <Input
+                            id="description"
+                            maxLength={200}
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="max-players">최대 접속 인원</Label>
+                          <Input
+                            id="max-players"
+                            type="number"
+                            min="1"
+                            max="1000"
+                            required
+                            value={maxPlayers}
+                            onChange={(e) => setMaxPlayers(e.target.value)}
+                          />
+                        </div>
+                        <div className="switch-row">
+                          <div>
+                            <Label htmlFor="public">공개 서버</Label>
+                            <p>서버 목록에 공개합니다.</p>
+                          </div>
+                          <Switch
+                            id="public"
+                            checked={publicServer}
+                            onCheckedChange={setPublicServer}
+                          />
+                        </div>
+                        <div className="switch-row">
+                          <div>
+                            <Label htmlFor="autosave">자동 저장</Label>
+                            <p>15분마다 진행 상황을 저장합니다.</p>
+                          </div>
+                          <Switch
+                            id="autosave"
+                            checked={autoSave}
+                            onCheckedChange={setAutoSave}
+                          />
+                        </div>
+                        <Button type="submit">
+                          <Save size={15} />
+                          설정 미리보기 적용
+                        </Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                  <Card className="connection-card">
+                    <CardHeader>
+                      <CardTitle>
+                        <Radio size={17} />
+                        서버 연결
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Badge variant="outline">연결 대기</Badge>
+                      <h3>공장과 연결할 준비 중입니다.</h3>
+                      <p>
+                        Mac 관리 에이전트가 연결되면 실제 상태 조회, 저장,
+                        시작·종료 기능을 사용할 수 있습니다.
+                      </p>
+                      <div className="connection-step">
+                        <Check size={16} />
+                        관리 웹 UI
+                      </div>
+                      <div className="connection-step muted">
+                        <span>2</span>Mac 에이전트 · 다음 단계
+                      </div>
+                      <div className="connection-step muted">
+                        <span>3</span>인증 및 원격 제어 연동
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : null}
             </>
-          ) : null}
-          {page === "players" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  플레이어 목록 <Badge variant="outline">예시</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="search-field">
-                  <Search size={16} />
-                  <Input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="플레이어 검색"
-                    aria-label="플레이어 검색"
-                  />
-                </div>
-                {running ? (
-                  players
-                    .filter((p) =>
-                      p.name.toLowerCase().includes(query.toLowerCase()),
-                    )
-                    .map((p) => (
-                      <div key={p.name} className="player-row">
-                        <div
-                          className="player-avatar"
-                          style={{ color: p.color, background: `${p.color}18` }}
-                        >
-                          {p.initials}
-                        </div>
-                        <div className="player-info">
-                          <strong>{p.name}</strong>
-                          <span>
-                            {p.role} · 접속 {p.time}
-                          </span>
-                        </div>
-                        <Badge variant="outline">{p.ping}</Badge>
-                      </div>
-                    ))
-                ) : (
-                  <p className="empty-state">접속 중인 플레이어가 없습니다.</p>
-                )}
-                {running &&
-                !players.some((p) =>
-                  p.name.toLowerCase().includes(query.toLowerCase()),
-                ) ? (
-                  <p className="empty-state">검색 결과가 없습니다.</p>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-          {page === "saves" ? (
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>저장 파일</CardTitle>
-                  <p className="section-caption">
-                    실제 파일 관리는 에이전트 연결 후 제공됩니다.
-                  </p>
-                </div>
-                <Button onClick={() => setAction("저장")}>
-                  <Save size={15} />
-                  수동 저장 미리보기
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {saves.map((s) => (
-                  <div className="save-list-row" key={s.name}>
-                    <div className="file-icon">
-                      <FileText size={22} />
-                    </div>
-                    <div className="save-list-info">
-                      <strong>{s.name}</strong>
-                      <span>
-                        {s.kind} · {s.date} · {s.size}
-                      </span>
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      aria-label={`${s.name} 다운로드 안내`}
-                      onClick={() => downloadSave(s.name)}
-                    >
-                      <Download size={16} />
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-          {page === "logs" ? (
-            <Card className="logs-card">
-              <CardHeader>
-                <CardTitle>
-                  <Terminal size={17} />
-                  서버 로그
-                </CardTitle>
-                <select
-                  className="log-select"
-                  aria-label="로그 유형 필터"
-                  value={logFilter}
-                  onChange={(e) => setLogFilter(e.target.value)}
-                >
-                  {["ALL", "INFO", "JOIN", "SAVE"].map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </CardHeader>
-              <CardContent>
-                <div className="search-field">
-                  <Search size={16} />
-                  <Input
-                    placeholder="로그 내용 검색"
-                    aria-label="로그 내용 검색"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </div>
-                <div className="terminal-lines expanded">
-                  {filteredLogs.map((l, i) => (
-                    <div className="log-line" key={i}>
-                      <time>{l.time}</time>
-                      <span className={cn("log-level", l.level.toLowerCase())}>
-                        {l.level}
-                      </span>
-                      <span>{l.text}</span>
-                    </div>
-                  ))}
-                  {!filteredLogs.length ? (
-                    <p className="empty-state">조건에 맞는 로그가 없습니다.</p>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-          {page === "settings" ? (
-            <div className="settings-grid">
-              <Card>
-                <CardHeader>
-                  <div>
-                    <CardTitle>기본 설정</CardTitle>
-                    <p className="section-caption">
-                      이 화면의 변경 사항은 미리보기에만 적용됩니다.
-                    </p>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setNotice(
-                        "설정이 미리보기에 적용되었습니다. 실제 서버에는 저장되지 않았습니다.",
-                      );
-                    }}
-                    className="settings-form"
-                  >
-                    <div>
-                      <Label htmlFor="server-name">서버 이름</Label>
-                      <Input
-                        id="server-name"
-                        required
-                        maxLength={80}
-                        value={serverName}
-                        onChange={(e) => setServerName(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="description">서버 설명</Label>
-                      <Input
-                        id="description"
-                        maxLength={200}
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="max-players">최대 접속 인원</Label>
-                      <Input
-                        id="max-players"
-                        type="number"
-                        min="1"
-                        max="1000"
-                        required
-                        value={maxPlayers}
-                        onChange={(e) => setMaxPlayers(e.target.value)}
-                      />
-                    </div>
-                    <div className="switch-row">
-                      <div>
-                        <Label htmlFor="public">공개 서버</Label>
-                        <p>서버 목록에 공개합니다.</p>
-                      </div>
-                      <Switch
-                        id="public"
-                        checked={publicServer}
-                        onCheckedChange={setPublicServer}
-                      />
-                    </div>
-                    <div className="switch-row">
-                      <div>
-                        <Label htmlFor="autosave">자동 저장</Label>
-                        <p>15분마다 진행 상황을 저장합니다.</p>
-                      </div>
-                      <Switch
-                        id="autosave"
-                        checked={autoSave}
-                        onCheckedChange={setAutoSave}
-                      />
-                    </div>
-                    <Button type="submit">
-                      <Save size={15} />
-                      설정 미리보기 적용
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-              <Card className="connection-card">
-                <CardHeader>
-                  <CardTitle>
-                    <Radio size={17} />
-                    서버 연결
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Badge variant="outline">연결 대기</Badge>
-                  <h3>공장과 연결할 준비 중입니다.</h3>
-                  <p>
-                    Mac 관리 에이전트가 연결되면 실제 상태 조회, 저장, 시작·종료
-                    기능을 사용할 수 있습니다.
-                  </p>
-                  <div className="connection-step">
-                    <Check size={16} />
-                    관리 웹 UI
-                  </div>
-                  <div className="connection-step muted">
-                    <span>2</span>Mac 에이전트 · 다음 단계
-                  </div>
-                  <div className="connection-step muted">
-                    <span>3</span>인증 및 원격 제어 연동
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : null}
+          )}
           <footer className="page-footer">
             <span>
               <Factory size={13} />
