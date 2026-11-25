@@ -115,12 +115,12 @@ export function SaveFileManager({ refreshKey }: { refreshKey: number }) {
         return;
       }
       if (!response.ok) throw new Error("Delete failed");
-      const result: { files: SaveFile[]; moved: string[]; failed: string[] } =
+      const result: { files: SaveFile[]; deleted: string[]; failed: string[] } =
         await response.json();
       setFiles(result.files);
       setSelection(result.failed);
       setMessage(
-        `${result.moved.length}개를 복구 폴더로 옮겼습니다.${result.failed.length ? ` ${result.failed.length}개는 옮기지 못했습니다.` : ""}`,
+        `${result.deleted.length}개를 영구 삭제했습니다.${result.failed.length ? ` ${result.failed.length}개는 삭제하지 못했습니다.` : ""}`,
       );
     } catch {
       setMessage(
@@ -138,7 +138,7 @@ export function SaveFileManager({ refreshKey }: { refreshKey: number }) {
         <div>
           <CardTitle>세이브 파일 관리</CardTitle>
           <p className="section-caption">
-            파일을 다운로드하거나, 선택한 파일을 복구 폴더로 옮길 수 있습니다.
+            파일을 다운로드하거나, 선택한 파일을 영구 삭제할 수 있습니다.
           </p>
         </div>
       </CardHeader>
@@ -262,7 +262,7 @@ export function SaveFileManager({ refreshKey }: { refreshKey: number }) {
               선택한 세이브 {chosen.length}개를 삭제할까요?
             </DialogTitle>
             <DialogDescription>
-              선택한 파일만 활성 목록에서 제거하고 Mac의 복구 폴더에 보관합니다.
+              선택한 파일을 디스크에서 영구 삭제합니다. 삭제한 파일은 복구할 수 없습니다.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -278,7 +278,7 @@ export function SaveFileManager({ refreshKey }: { refreshKey: number }) {
               disabled={busy === "delete" || !chosen.length}
               onClick={() => void removeSelected()}
             >
-              {busy === "delete" ? "이동 중…" : "선택 삭제"}
+              {busy === "delete" ? "삭제 중…" : "선택 삭제"}
             </Button>
           </DialogFooter>
         </DialogContent>

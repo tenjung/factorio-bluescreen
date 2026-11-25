@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, rename } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { lstat, open, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { loadedWorld } from "./factorio-loaded-world";
@@ -133,24 +132,18 @@ export async function factorioSaveFiles(root: string, request: Request) {
         { status: 409, headers },
       );
     }
-    const trash = join(
-      root,
-      "data/deleted-saves",
-      `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`,
-    );
-    await mkdir(trash, { recursive: true, mode: 0o700 });
-    const moved: string[] = [];
+    const deleted: string[] = [];
     const failed: string[] = [];
     for (const name of names) {
       try {
-        await rename(join(directory, name), join(trash, name));
-        moved.push(name);
+        await unlink(join(directory, name));
+        deleted.push(name);
       } catch {
         failed.push(name);
       }
     }
     return Response.json(
-      { moved, failed, files: await saveFiles(root) },
+      { deleted, failed, files: await saveFiles(root) },
       { headers },
     );
   } finally {
