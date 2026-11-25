@@ -106,7 +106,7 @@ export function SaveFileManager({ refreshKey }: { refreshKey: number }) {
           "Content-Type": "application/json",
           "x-settings-password": password,
         },
-        body: JSON.stringify({ names: chosen, confirmed: true }),
+        body: JSON.stringify({ names: chosen, confirmPermanentDeletion: true }),
       });
       if (response.status === 409) {
         setMessage(

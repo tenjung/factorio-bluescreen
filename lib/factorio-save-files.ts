@@ -104,7 +104,7 @@ export async function factorioSaveFiles(root: string, request: Request) {
 
   const input = await request.json();
   if (
-    input?.confirmed !== true ||
+    input?.confirmPermanentDeletion !== true ||
     !Array.isArray(input.names) ||
     !input.names.length ||
     input.names.length > 1000 ||
