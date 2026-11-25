@@ -19,6 +19,14 @@ const worldName = /^world-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.zip$/;
 const label = "com.factorio.server";
 let switching = false;
 
+export function reserveFactorioOperation() {
+  if (switching) return null;
+  switching = true;
+  return () => {
+    switching = false;
+  };
+}
+
 export async function preparedWorlds(root: string) {
   const dir = join(root, "data/prepared-worlds");
   const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {

@@ -2,6 +2,7 @@
 
 import { HistoryToggle } from "@/components/history-toggle";
 import { historyLimits, recentLimits } from "@/lib/factorio-list-limits";
+import { SaveFileManager } from "@/components/save-file-manager";
 import { ServerChat } from "@/components/server-chat";
 import { ServerSettings } from "@/components/server-settings";
 
@@ -412,7 +413,19 @@ export function LiveStatus({
         </Card>
       )}
       {page === "logs" && logsCard}
-      {page === "saves" && savesCard}
+      {page === "saves" &&
+        (publicView ? (
+          <>
+            {savesCard}
+            <Button asChild variant="outline" className="mt-4">
+              <a href="https://factorio-bluescreen-git-feat-control-d-ced340-tenjungs-projects.vercel.app/saves">
+                관리자 다운로드·삭제
+              </a>
+            </Button>
+          </>
+        ) : (
+          <SaveFileManager refreshKey={refreshKey} />
+        ))}
       {page === "chat" && (
         <ServerChat
           running={status?.running}

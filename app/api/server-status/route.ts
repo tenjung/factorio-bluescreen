@@ -1,3 +1,5 @@
+import { loadedWorld } from "@/lib/factorio-loaded-world";
+import { factorioSaveFiles } from "@/lib/factorio-save-files";
 import { historyLimits, recentLimits } from "@/lib/factorio-list-limits";
 import {
   chatStreamHeaders,
@@ -14,8 +16,8 @@ import {
 } from "@/lib/factorio-switch";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
-import { open, readdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 
@@ -73,7 +75,8 @@ export async function GET(request: Request) {
       view === "world" ||
       view === "settings" ||
       view === "chat" ||
-      view === "addresses"
+      view === "addresses" ||
+      view === "save-files"
       ? view
       : "status",
   );
@@ -83,7 +86,8 @@ function settingsView(view: string | null) {
   return view === "world" ||
     view === "switch-world" ||
     view === "control" ||
-    view === "chat"
+    view === "chat" ||
+    view === "save-files"
     ? view
     : "settings";
 }
@@ -97,7 +101,8 @@ async function handle(
     | "switch-world"
     | "control"
     | "chat"
-    | "addresses",
+    | "addresses"
+    | "save-files",
 ) {
   const settings = view !== "status";
   const stream =
@@ -135,6 +140,11 @@ async function handle(
       const url = new URL(process.env.FACTORIO_BRIDGE_URL);
       if (settings) url.searchParams.set("view", view);
       if (stream) url.searchParams.set("stream", "1");
+      const file =
+        view === "save-files"
+          ? new URL(request.url).searchParams.get("file")
+          : null;
+      if (file !== null) url.searchParams.set("file", file);
       const upstream = await fetch(url, {
         method: request.method,
         body: request.method === "POST" ? await request.text() : undefined,
@@ -153,16 +163,37 @@ async function handle(
         },
         cache: "no-store",
         redirect: "error",
-        signal: stream
-          ? AbortSignal.any([request.signal, AbortSignal.timeout(50000)])
-          : AbortSignal.timeout(
-              view === "world" || view === "switch-world" || view === "control"
-                ? 55000
-                : settings
-                  ? 12000
-                  : 5000,
-            ),
+        signal:
+          stream || file !== null
+            ? AbortSignal.any([request.signal, AbortSignal.timeout(50000)])
+            : AbortSignal.timeout(
+                view === "world" ||
+                  view === "switch-world" ||
+                  view === "control"
+                  ? 55000
+                  : settings
+                    ? 12000
+                    : 5000,
+              ),
       });
+      if (view === "save-files") {
+        if (file !== null && upstream.ok) {
+          if (upstream.headers.get("content-type") !== "application/zip")
+            throw new Error("Expected ZIP");
+          return new Response(upstream.body, {
+            headers: {
+              ...headers,
+              "Content-Type": "application/zip",
+              "Content-Disposition":
+                upstream.headers.get("content-disposition") ?? "attachment",
+            },
+          });
+        }
+        return new Response(upstream.body, {
+          status: upstream.status,
+          headers: { ...headers, "Content-Type": "application/json" },
+        });
+      }
       if (!upstream.ok) throw new Error("Bridge unavailable");
       if (stream) {
         if (
@@ -237,6 +268,7 @@ async function handle(
     if (settings) {
       const root = process.env.FACTORIO_SERVER_DIR;
       if (!root) throw new Error("Missing dedicated server directory");
+      if (view === "save-files") return await factorioSaveFiles(root, request);
       if (view === "addresses")
         return Response.json(await factorioAddresses(), { headers });
       if (view === "chat") {
@@ -320,24 +352,6 @@ async function handle(
     );
   } catch {
     return Response.json({ error: "unavailable" }, { status: 503, headers });
-  }
-}
-
-async function loadedWorld(root: string) {
-  try {
-    const file = await open(join(root, "data/factorio-current.log"), "r");
-    try {
-      const buffer = Buffer.alloc(128 * 1024);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      const match = /Loading map (.+?\.zip): \d+ bytes\./.exec(
-        buffer.toString("utf8", 0, bytesRead),
-      );
-      return match ? basename(match[1]) : null;
-    } finally {
-      await file.close();
-    }
-  } catch {
-    return null;
   }
 }
 
