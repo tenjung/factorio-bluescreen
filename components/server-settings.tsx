@@ -37,6 +37,11 @@ const fields = [
     label: "일시정지 권한",
     help: "관리자만 일시정지할 수 있도록 제한합니다.",
   },
+  {
+    key: "autoPause",
+    label: "빈 서버 자동 일시정지",
+    help: "접속자가 없으면 공장 진행을 멈춥니다.",
+  },
 ] as const;
 type Field = (typeof fields)[number];
 type Settings = {
@@ -44,6 +49,7 @@ type Settings = {
   autosave: number;
   afk: number;
   adminPause: boolean;
+  autoPause: boolean;
 };
 const endpoint = "/api/server-status?view=settings";
 
@@ -67,24 +73,14 @@ function Setting({
         event.preventDefault();
         void onSave(
           field.key,
-          field.key === "adminPause" ? draft === "true" : Number(draft),
+          typeof initial === "boolean" ? draft === "true" : Number(draft),
         );
       }}
     >
       <div>
         <Label htmlFor={id}>{field.label}</Label>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          {field.key === "adminPause" ? (
-            <select
-              className="log-select"
-              id={id}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-            >
-              <option value="false">모든 플레이어</option>
-              <option value="true">관리자만</option>
-            </select>
-          ) : (
+          {"min" in field ? (
             <Input
               className="!w-32"
               id={id}
@@ -95,8 +91,24 @@ function Setting({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
             />
+          ) : (
+            <select
+              className="log-select"
+              id={id}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+            >
+              <option value="false">
+                {field.key === "autoPause" ? "끄기" : "모든 플레이어"}
+              </option>
+              <option value="true">
+                {field.key === "autoPause" ? "켜기" : "관리자만"}
+              </option>
+            </select>
           )}
-          <Badge variant="outline">즉시 적용</Badge>
+          <Badge variant="outline">
+            {field.key === "autoPause" ? "재시작 후 적용" : "즉시 적용"}
+          </Badge>
           <Button type="submit" disabled={busy || draft === String(initial)}>
             저장
           </Button>
@@ -204,7 +216,11 @@ export function ServerSettings({
       if (!response.ok) throw new Error("Save failed");
       const applied = await response.json();
       setSettings((previous) => previous && { ...previous, ...applied });
-      setMessage("서버에서 적용을 확인했고 재시작 후에도 유지됩니다.");
+      setMessage(
+        key === "autoPause"
+          ? "저장했습니다. 다음 서버 시작 또는 재시작 때 적용됩니다."
+          : "서버에서 적용을 확인했고 재시작 후에도 유지됩니다.",
+      );
     } catch {
       setMessage(
         "저장 결과를 확인하지 못했습니다. 다시 저장하기 전에 새로고침으로 현재 값을 확인하세요.",
@@ -301,15 +317,17 @@ export function ServerSettings({
         </CardHeader>
         <CardContent>
           {settings
-            ? fields.map((field) => (
-                <Setting
-                  key={`${field.key}:${settings[field.key]}`}
-                  field={field}
-                  initial={settings[field.key]}
-                  busy={busy}
-                  onSave={save}
-                />
-              ))
+            ? fields
+                .filter((field) => settings[field.key] !== undefined)
+                .map((field) => (
+                  <Setting
+                    key={`${field.key}:${settings[field.key]}`}
+                    field={field}
+                    initial={settings[field.key]}
+                    busy={busy}
+                    onSave={save}
+                  />
+                ))
             : !message && <p>서버 설정을 읽는 중입니다.</p>}
           {message && (
             <p className="mt-4" role="status">

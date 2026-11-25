@@ -8,7 +8,7 @@ import {
 } from "@/lib/factorio-chat-stream";
 import { factorioAddresses } from "@/lib/factorio-addresses";
 import { factorioWorld } from "@/lib/factorio-world";
-import { factorioSettings } from "@/lib/factorio-settings";
+import { configuredAutoPause, factorioSettings } from "@/lib/factorio-settings";
 import {
   controlFactorio,
   preparedWorlds,
@@ -22,6 +22,39 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
+const connectionError =
+  /(?:connection (?:request )?(?:timed out|rejected)|(?:failed|unable) to (?:connect|establish connection)|disconnecting.*(?:timeout|timed out)|\b(?:version|mod) mismatch\b)/i;
+
+function summarizeOperations(
+  lines: string[],
+  saves: { name: string; modified: string }[] | null,
+) {
+  let started: { name: string; seconds: number } | undefined;
+  let lastSave: { modified: string | null; durationMs: number | null } | null =
+    null;
+  let connectionErrors = 0;
+  for (const line of lines) {
+    if (line.includes("[CHAT]")) continue;
+    if (line.includes("Starting RCON interface")) {
+      started = undefined;
+      connectionErrors = 0;
+    }
+    if (connectionError.test(line)) connectionErrors++;
+    const save = /^(\d+\.\d+) .*Saving to (.+?)(?: \([^)]*\))?\.$/.exec(line);
+    if (save) started = { name: save[2], seconds: Number(save[1]) };
+    const done = /^(\d+\.\d+) .*Saving finished\s*$/.exec(line);
+    if (!done || !started) continue;
+    const elapsed = Number(done[1]) - started.seconds;
+    const name = started.name.split("/").at(-1) ?? "";
+    const zip = name.endsWith(".zip") ? name : `${name}.zip`;
+    lastSave = {
+      modified: saves?.find((file) => file.name === zip)?.modified ?? null,
+      durationMs: elapsed >= 0 ? Math.round(elapsed * 1000) : null,
+    };
+    started = undefined;
+  }
+  return { lastSave, connectionErrors };
+}
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
@@ -145,6 +178,11 @@ async function handle(
           ? new URL(request.url).searchParams.get("file")
           : null;
       if (file !== null) url.searchParams.set("file", file);
+      if (
+        view === "save-files" &&
+        new URL(request.url).searchParams.get("inventory") === "1"
+      )
+        url.searchParams.set("inventory", "1");
       const upstream = await fetch(url, {
         method: request.method,
         body: request.method === "POST" ? await request.text() : undefined,
@@ -169,7 +207,8 @@ async function handle(
             : AbortSignal.timeout(
                 view === "world" ||
                   view === "switch-world" ||
-                  view === "control"
+                  view === "control" ||
+                  (view === "save-files" && request.method === "POST")
                   ? 55000
                   : settings
                     ? 12000
@@ -213,6 +252,8 @@ async function handle(
           players: status.players,
           playerEvents: status.playerEvents,
           world: status.world,
+          autoPauseConfigured: status.autoPauseConfigured,
+          operations: status.operations,
           saves: status.saves,
           logs: Array.isArray(status.logs)
             ? status.logs.map((line: string) =>
@@ -229,6 +270,8 @@ async function handle(
             snapshot.running,
             snapshot.players,
             snapshot.logs,
+            snapshot.autoPauseConfigured,
+            snapshot.operations,
           ])
         );
       }
@@ -239,6 +282,8 @@ async function handle(
             status.running,
             status.players,
             status.logs,
+            status.autoPauseConfigured,
+            status.operations,
           ])
         );
       if (view === "chat" && request.method === "GET")
@@ -348,6 +393,8 @@ async function handle(
         snapshot.running,
         snapshot.players,
         snapshot.logs,
+        snapshot.autoPauseConfigured,
+        snapshot.operations,
       ])
     );
   } catch {
@@ -373,7 +420,7 @@ async function readFactorioStatus() {
   const row = processes[0]?.trim().split(/\s+/, 5);
   const root = process.env.FACTORIO_SERVER_DIR;
   if (!root) throw new Error("Missing dedicated server directory");
-  const [playerOutput, logOutput, entries, worldResult] =
+  const [playerOutput, logOutput, entries, worldResult, pauseResult] =
     await Promise.allSettled([
       row
         ? run(join(root, "rcon.sh"), ["/players online"], { timeout: 3000 })
@@ -385,6 +432,7 @@ async function readFactorioStatus() {
       ),
       readdir(join(root, "data/saves"), { withFileTypes: true }),
       row ? loadedWorld(root) : Promise.resolve(null),
+      configuredAutoPause(root),
     ]);
   const playerText =
     playerOutput.status === "fulfilled"
@@ -398,37 +446,37 @@ async function readFactorioStatus() {
           ([, name]) => name,
         )
       : null;
-  const playerEvents =
+  const lines =
     logOutput.status === "fulfilled"
-      ? logOutput.value.stdout
-          .split("\n")
-          .flatMap((line) => {
-            const event =
-              /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(JOIN|LEAVE)\] (.+?) (?:joined|left) the game\s*$/.exec(
-                line,
-              );
-            return event
-              ? [{ at: event[1], action: event[2], player: event[3] }]
-              : [];
-          })
-          .slice(-historyLimits.playerEvents)
-          .reverse()
+      ? logOutput.value.stdout.split("\n")
       : null;
-  const logs =
-    logOutput.status === "fulfilled"
-      ? logOutput.value.stdout
-          .split("\n")
-          .filter(
-            (line) =>
-              /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|Changing state/.test(
-                line,
-              ) &&
-              !/\[CHAT\]|https?:|password|token|(?:\d{1,3}\.){3}\d{1,3}/i.test(
-                line,
-              ),
-          )
-          .slice(-historyLimits.logs)
-      : null;
+  const playerEvents = lines
+    ? lines
+        .flatMap((line) => {
+          const event =
+            /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(JOIN|LEAVE)\] (.+?) (?:joined|left) the game\s*$/.exec(
+              line,
+            );
+          return event
+            ? [{ at: event[1], action: event[2], player: event[3] }]
+            : [];
+        })
+        .slice(-historyLimits.playerEvents)
+        .reverse()
+    : null;
+  const logs = lines
+    ? lines
+        .filter(
+          (line) =>
+            /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|Changing state/.test(
+              line,
+            ) &&
+            !/\[CHAT\]|https?:|password|token|(?:\d{1,3}\.){3}\d{1,3}/i.test(
+              line,
+            ),
+        )
+        .slice(-historyLimits.logs)
+    : null;
   const saves =
     entries.status === "fulfilled"
       ? await Promise.all(
@@ -446,6 +494,9 @@ async function readFactorioStatus() {
       : null;
   saves?.sort((a, b) => b.modified.localeCompare(a.modified));
   const snapshot = {
+    operations: lines ? summarizeOperations(lines, saves) : null,
+    autoPauseConfigured:
+      pauseResult.status === "fulfilled" ? pauseResult.value : null,
     players,
     playerEvents,
     world: worldResult.status === "fulfilled" ? worldResult.value : null,
@@ -466,9 +517,10 @@ const factorioStatusStream = createFactorioLogStream(
       .filter(
         (line) =>
           !line.includes("[CHAT]") &&
-          /\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|changing state|Starting RCON interface|Goodbye/i.test(
+          (/\[(JOIN|LEAVE)\]|Saving (to |finished)|Hosting game|changing state|Starting RCON interface|Goodbye/i.test(
             line,
-          ),
+          ) ||
+            connectionError.test(line)),
       )
       .slice(-50),
   async () => {

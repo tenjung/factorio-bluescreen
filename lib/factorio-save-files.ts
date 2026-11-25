@@ -1,9 +1,9 @@
 import { constants } from "node:fs";
-import { lstat, open, readdir, unlink } from "node:fs/promises";
+import { lstat, open, readdir, statfs, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { loadedWorld } from "./factorio-loaded-world";
-import { reserveFactorioOperation } from "./factorio-switch";
+import { reserveFactorioOperation, switchWorld } from "./factorio-switch";
 
 const headers = { "Cache-Control": "no-store" };
 const valid = (name: unknown): name is string =>
@@ -58,11 +58,26 @@ async function saveFiles(root: string) {
   }));
 }
 
+async function saveInventory(root: string) {
+  const [files, disk] = await Promise.all([
+    saveFiles(root),
+    statfs(join(root, "data/saves")).catch(() => null),
+  ]);
+  return { files, availableBytes: disk ? disk.bavail * disk.bsize : null };
+}
+
 export async function factorioSaveFiles(root: string, request: Request) {
   const directory = join(root, "data/saves");
   if (request.method === "GET") {
-    const name = new URL(request.url).searchParams.get("file");
-    if (name === null) return Response.json(await saveFiles(root), { headers });
+    const query = new URL(request.url).searchParams;
+    const name = query.get("file");
+    if (name === null)
+      return Response.json(
+        await (query.get("inventory") === "1"
+          ? saveInventory(root)
+          : saveFiles(root)),
+        { headers },
+      );
     if (!valid(name))
       return Response.json(
         { error: "invalid_filename" },
@@ -103,6 +118,16 @@ export async function factorioSaveFiles(root: string, request: Request) {
   }
 
   const input = await request.json();
+  if (input?.confirmRollback === true && valid(input.name)) {
+    const name = `world-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+    const result = await switchWorld(
+      root,
+      name,
+      true,
+      join(directory, input.name),
+    );
+    return Response.json(result, { headers });
+  }
   if (
     input?.confirmPermanentDeletion !== true ||
     !Array.isArray(input.names) ||
@@ -143,7 +168,7 @@ export async function factorioSaveFiles(root: string, request: Request) {
       }
     }
     return Response.json(
-      { deleted, failed, files: await saveFiles(root) },
+      { deleted, failed, ...(await saveInventory(root)) },
       { headers },
     );
   } finally {

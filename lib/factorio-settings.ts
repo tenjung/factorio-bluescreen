@@ -41,27 +41,62 @@ async function read(root: string, key: Key) {
   );
 }
 
+export async function configuredAutoPause(root: string) {
+  const config = JSON.parse(
+    await readFile(join(root, "server-settings.json"), "utf8"),
+  );
+  if (config.auto_pause === undefined) return true;
+  if (typeof config.auto_pause !== "boolean")
+    throw new Error("Invalid auto-pause config");
+  return config.auto_pause;
+}
+
 let pending = false;
 export async function factorioSettings(root: string, request: Request) {
   if (request.method === "GET") {
-    return Object.fromEntries(
-      await Promise.all(
+    const [autoPause, live] = await Promise.all([
+      configuredAutoPause(root),
+      Promise.all(
         (Object.keys(fields) as Key[]).map(async (key) => [
           key,
           await read(root, key),
         ]),
       ),
-    );
+    ]);
+    return { ...Object.fromEntries(live), autoPause };
   }
   const input = await request.json();
   if (
     !input ||
     typeof input.key !== "string" ||
-    !Object.hasOwn(fields, input.key)
+    (input.key !== "autoPause" && !Object.hasOwn(fields, input.key))
   )
     throw new Error("Invalid setting");
-  const key = input.key as Key;
   const value: unknown = input.value;
+  if (input.key === "autoPause") {
+    if (typeof value !== "boolean") throw new Error("Invalid value");
+    if (pending) throw new Error("Settings update already running");
+    pending = true;
+    const file = join(root, "server-settings.json");
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      const original = await readFile(file, "utf8");
+      const config = JSON.parse(original);
+      config.auto_pause = value;
+      await writeFile(temporary, JSON.stringify(config, null, 2) + "\n", {
+        mode: (await stat(file)).mode & 0o777,
+        flag: "wx",
+      });
+      if ((await readFile(file, "utf8")) !== original)
+        throw new Error("Config changed concurrently");
+      await rename(temporary, file);
+      return { autoPause: value };
+    } finally {
+      pending = false;
+      await rm(temporary, { force: true });
+    }
+  }
+  const key = input.key as Key;
   const [option, fileKey, min, max] = fields[key];
   if (
     key === "adminPause"

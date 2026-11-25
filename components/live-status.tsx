@@ -24,6 +24,11 @@ import { useEffect, useState } from "react";
 
 type Status = {
   playerCount?: number | null;
+  autoPauseConfigured?: boolean | null;
+  operations?: {
+    lastSave: { modified: string | null; durationMs: number | null } | null;
+    connectionErrors: number;
+  } | null;
   world?: string | null;
   playerEvents?:
     | { at: string; action: "JOIN" | "LEAVE"; player: string }[]
@@ -262,6 +267,9 @@ export function LiveStatus({
       </CardContent>
     </Card>
   );
+  const operations = status?.operations;
+  const waitingForPlayers =
+    status?.running && (status.playerCount ?? status.players?.length) === 0;
   const logsCard = (
     <Card className="logs-card">
       <CardHeader>
@@ -276,6 +284,32 @@ export function LiveStatus({
         )}
       </CardHeader>
       <CardContent>
+        {operations && (
+          <dl className="grid gap-2 border-b border-border px-4 py-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">마지막 저장 완료</dt>
+              <dd>
+                {operations.lastSave?.modified
+                  ? formatTime(operations.lastSave.modified)
+                  : operations.lastSave
+                    ? "기록 확인됨"
+                    : "기록 없음"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">저장 소요 시간</dt>
+              <dd>
+                {operations.lastSave?.durationMs != null
+                  ? `${operations.lastSave.durationMs} ms`
+                  : "확인 불가"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">최근 로그의 접속 오류</dt>
+              <dd>{operations.connectionErrors}건</dd>
+            </div>
+          </dl>
+        )}
         <div className="terminal-lines max-h-96 overflow-y-auto">
           {(overview ? status?.logs?.slice(-6) : logsToShow)?.map(
             (line, index) => (
@@ -419,12 +453,16 @@ export function LiveStatus({
             {savesCard}
             <Button asChild variant="outline" className="mt-4">
               <a href="https://factorio-bluescreen-git-feat-control-d-ced340-tenjungs-projects.vercel.app/saves">
-                관리자 다운로드·삭제
+                관리자 세이브 관리
               </a>
             </Button>
           </>
         ) : (
-          <SaveFileManager refreshKey={refreshKey} />
+          <SaveFileManager
+            refreshKey={refreshKey}
+            running={status?.running}
+            playerCount={status?.playerCount ?? status?.players?.length}
+          />
         ))}
       {page === "chat" && (
         <ServerChat
@@ -471,7 +509,7 @@ export function LiveStatus({
                     }
                   >
                     {status
-                      ? `${connection !== "connected" ? "마지막 상태 · " : ""}${status.running ? "실행 중" : "중지됨"}`
+                      ? `${connection !== "connected" ? "마지막 상태 · " : ""}${status.running ? (waitingForPlayers ? "접속 대기" : "실행 중") : "중지됨"}`
                       : "상태 확인 중"}
                   </Badge>
                 </div>
@@ -484,6 +522,9 @@ export function LiveStatus({
                     <strong className="break-all text-foreground">
                       {status?.world ??
                         (status?.running === false ? "서버 중지됨" : "확인 중")}
+                      {waitingForPlayers &&
+                        status?.autoPauseConfigured === true &&
+                        " · 자동 일시정지 설정 켜짐"}
                     </strong>
                   </span>
                   <span>

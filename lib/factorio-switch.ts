@@ -2,9 +2,11 @@ import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import {
   copyFile,
+  lstat,
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   utimes,
@@ -13,6 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
+import { loadedWorld } from "./factorio-loaded-world";
 
 const run = promisify(execFile);
 const worldName = /^world-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.zip$/;
@@ -48,6 +51,7 @@ export async function switchWorld(
   root: string,
   name: unknown,
   confirmDisconnect: boolean,
+  rollbackSource?: string,
 ) {
   if (typeof name !== "string" || !worldName.test(name))
     throw new Error("Invalid world");
@@ -60,17 +64,19 @@ export async function switchWorld(
   const domain = `gui/${process.getuid?.()}`;
   const service = `${domain}/${label}`;
   const plist = join(homedir(), "Library/LaunchAgents", `${label}.plist`);
-  const source = join(root, "data/prepared-worlds", name);
+  const source = rollbackSource ?? join(root, "data/prepared-worlds", name);
   const saves = join(root, "data/saves");
   const target = join(saves, name);
+  const staged = `${target}.pending`;
   const checkpoint = `before-switch-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   const log = join(homedir(), "Library/Logs/factorio-server.log");
   let stopped = false;
   let copied = false;
   let started = false;
   let managed = false;
+  let stagedCopy = false;
   try {
-    if (!(await preparedWorlds(root)).includes(name))
+    if (!rollbackSource && !(await preparedWorlds(root)).includes(name))
       throw new Error("World missing");
     if (
       await stat(target).then(
@@ -82,14 +88,21 @@ export async function switchWorld(
       )
     )
       throw new Error("World already present in active saves");
-    await run("/usr/bin/unzip", ["-tq", source], { timeout: 3000 });
+    if (rollbackSource) {
+      if (!(await lstat(source)).isFile()) throw new Error("Save missing");
+      await copyFile(source, staged, constants.COPYFILE_EXCL);
+      stagedCopy = true;
+    }
+    await run("/usr/bin/unzip", ["-tq", rollbackSource ? staged : source], {
+      timeout: 5000,
+    });
     const origin = join(root, `${label}.plist`);
     await copyFile(origin, plist, constants.COPYFILE_EXCL).catch((error) => {
       if (error.code !== "EEXIST") throw error;
     });
     if ((await readFile(plist, "utf8")) !== (await readFile(origin, "utf8")))
       throw new Error("Unexpected server service definition");
-    const previousLogSize = (await stat(log)).size;
+    const previousLogSize = rollbackSource ? 0 : (await stat(log)).size;
     const online = async () =>
       /^Online players \(0\):/m.test(await rcon("/players online"));
     if (!confirmDisconnect && !(await online()))
@@ -107,15 +120,17 @@ export async function switchWorld(
       if (i === 19) throw new Error("Checkpoint verification failed");
       await sleep(250);
     }
-    const archive = join(root, "data/backup", checkpoint);
-    await mkdir(archive, { recursive: true, mode: 0o700 });
-    for (const file of await readdir(saves, { withFileTypes: true })) {
-      if (file.isFile() && file.name.endsWith(".zip")) {
-        await copyFile(
-          join(saves, file.name),
-          join(archive, file.name),
-          constants.COPYFILE_EXCL,
-        );
+    if (!rollbackSource) {
+      const archive = join(root, "data/backup", checkpoint);
+      await mkdir(archive, { recursive: true, mode: 0o700 });
+      for (const file of await readdir(saves, { withFileTypes: true })) {
+        if (file.isFile() && file.name.endsWith(".zip")) {
+          await copyFile(
+            join(saves, file.name),
+            join(archive, file.name),
+            constants.COPYFILE_EXCL,
+          );
+        }
       }
     }
     if (!confirmDisconnect && !(await online()))
@@ -151,8 +166,15 @@ export async function switchWorld(
     if ((await listening()) || (await locked()))
       throw new Error("Previous server still running");
     stopped = true;
-    await copyFile(source, target, constants.COPYFILE_EXCL);
+    if (rollbackSource) {
+      await rename(staged, target);
+      stagedCopy = false;
+    } else await copyFile(source, target, constants.COPYFILE_EXCL);
     copied = true;
+    if (rollbackSource) {
+      const now = new Date();
+      await utimes(target, now, now);
+    }
     for (const file of await readdir(saves, { withFileTypes: true })) {
       if (
         file.isFile() &&
@@ -175,7 +197,14 @@ export async function switchWorld(
     for (let i = 0; i < 22; i++) {
       await sleep(500);
       const available = await listening();
-      if (available) {
+      if (available && rollbackSource) {
+        const running = await rcon("/players online").then(
+          (reply) => /^Online players \(\d+\):/m.test(reply),
+          () => false,
+        );
+        if (running && (await loadedWorld(root)) === name)
+          return { name, backup: checkpoint };
+      } else if (available) {
         const current = (await readFile(log))
           .subarray(previousLogSize)
           .toString();
@@ -199,7 +228,11 @@ export async function switchWorld(
     }
     throw error;
   } finally {
-    switching = false;
+    try {
+      if (stagedCopy) await rm(staged, { force: true });
+    } finally {
+      switching = false;
+    }
   }
 }
 
